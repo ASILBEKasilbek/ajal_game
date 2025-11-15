@@ -1,0 +1,27 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+
+# Environment files
+.env
+*.env
+
+# Databases
+*.db
+
+# Media files
+*.mp4
+*.jpg
+*.png
+
+# VSCode
+.vscode/
+
+# Mac OS trash
+.DS_Store
