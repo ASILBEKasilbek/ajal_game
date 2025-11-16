@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
-from database.user_models import get_user, add_olmos
+from database.user_models import get_user
+from database.db import add_olmos
 from locales import t
 from config import ADMIN_GROUP_ID,PACKAGES
 
