@@ -1,6 +1,6 @@
 # handlers/game.py
 from aiogram import Router, F
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup,
     InlineKeyboardButton, FSInputFile
@@ -15,10 +15,12 @@ from database.db import (
     save_game_state, delete_game_state
 )
 from datetime import datetime
-from config import CARD_CHOICE_TIME, NIGHT_DELAY, NOMINATE_TIME, GROUP_VOTE_TIME, MADARA_POISON_ROUNDS, CARDS,JOIN_TIME
+from config import JOIN_TIME, CARD_CHOICE_TIME, NIGHT_DELAY, NOMINATE_TIME, GROUP_VOTE_TIME, MADARA_POISON_ROUNDS,CARDS
 
 router = Router()
+
 active_games: Dict[int, 'GameState'] = {}
+
 
 @dataclass
 class Player:
@@ -97,11 +99,8 @@ async def start_game(message: Message):
     if chat_id in active_games and active_games[chat_id].running:
         return await message.answer("O'yin allaqachon boshlangan!")
 
-    bot_info = await bot.get_me()
-    join_url = f"https://t.me/{bot_info.username}?start=game_{chat_id}"
-
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="O'yinga qo'shilish", url=join_url)],
+        [InlineKeyboardButton(text="O'yinga qo'shilish", callback_data="join_game")],
         [InlineKeyboardButton(text="Boshlash", callback_data="start_game_admin")]
     ])
     msg = await message.answer(
@@ -110,7 +109,6 @@ async def start_game(message: Message):
         f"<i>Ishtirokchilar: 0</i>",
         reply_markup=kb, parse_mode="HTML"
     )
-
     gs = GameState(chat_id=chat_id, lobby_message_id=msg.message_id)
     active_games[chat_id] = gs
 
@@ -125,11 +123,46 @@ async def start_game(message: Message):
     await safe_delete(bot, chat_id, gs.lobby_message_id)
     await begin_game(gs, bot)
 
+@router.callback_query(F.data == "join_game")
+async def join_game(callback: CallbackQuery):
+    gs = active_games.get(callback.message.chat.id)
+    if not gs or gs.running:
+        return await callback.answer("Lobby yopilgan.", show_alert=True)
+
+    user = callback.from_user
+    if user.id in gs.players:
+        return await callback.answer("Siz allaqachon qo'shildingiz.")
+
+    try:
+        await callback.bot.send_chat_action(user.id, "typing")
+    except (TelegramForbiddenError, TelegramBadRequest):
+        bot_name = (await callback.bot.get_me()).username
+        return await callback.answer(
+            f"Botni ishga tushiring: @{(bot_name)}", show_alert=True
+        )
+    
+
+    gs.players[user.id] = Player(user_id=user.id, name=user.full_name)
+    await callback.answer("Qo'shildingiz!", show_alert=True)
+
+    players_list = '\n'.join(f"{i+1}. {p.name}" for i, p in enumerate(gs.players.values()))
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="O'yinga qo'shilish", callback_data="join_game")],
+        [InlineKeyboardButton(text="Boshlash", callback_data="start_game_admin")]
+    ])
+    await callback.message.edit_text(
+        f"<b>AJAL O'YINI</b>\n\n"
+        f"Lobby {JOIN_TIME}s ochiq.\n\n"
+        f"<b>Ishtirokchilar ({len(gs.players)}):</b>\n{players_list}",
+        reply_markup=kb, parse_mode="HTML"
+    )
+
 @router.callback_query(F.data == "start_game_admin")
 async def start_game_admin(callback: CallbackQuery):
     gs = active_games.get(callback.message.chat.id)
     if not gs or gs.running or len(gs.players) < 5:
         return await callback.answer("Kamida 5 kishi kerak!", show_alert=True)
+
     await callback.answer("O'yin boshlanmoqda...")
     await safe_delete(callback.bot, callback.message.chat.id, gs.lobby_message_id)
     await begin_game(gs, callback.bot)
@@ -138,9 +171,10 @@ async def start_game_admin(callback: CallbackQuery):
 async def begin_game(gs: GameState, bot):
     gs.running = True
     assign_roles(gs)
+
     try:
         await bot.send_animation(gs.chat_id, FSInputFile("ajal_game_gif.mp4"),
-                                 caption="O'yin boshlanmoqda!")
+                                caption="O'yin boshlanmoqda!")
     except:
         pass
 
@@ -169,6 +203,7 @@ async def begin_game(gs: GameState, bot):
             return
 
         gs.round_number += 1
+        # await broadcast(bot, gs.chat_id, f"\n━━━ <b>Raund {gs.round_number}</b> ━━━")
         await card_phase(gs, bot)
         await night_phase(gs, bot)
         await day_phase(gs, bot)
@@ -184,24 +219,25 @@ async def card_phase(gs: GameState, bot):
     ])
     msg = await broadcast(bot, gs.chat_id, "Karta tanlang!", reply_markup=kb)
     gs.card_message_id = msg.message_id
+    
 
     await asyncio.sleep(CARD_CHOICE_TIME)
     gs.card_phase_active = False
-    killed = []
 
+    killed = []
     for p in gs.players.values():
         if p.alive and p.chosen_card != p.card:
             p.alive = False
             killed.append(p.name)
             others = [f"{pl.name} — {pl.card}" for pl in gs.players.values()
-                      if pl.alive and pl.user_id != p.user_id]
+                     if pl.alive and pl.user_id != p.user_id]
             try:
                 await bot.send_message(p.user_id,
                     f"Siz o'ldingiz!\n\nBoshqalar kartalari:\n" + "\n".join(others),
                     parse_mode="HTML")
                 revive_kb = InlineKeyboardMarkup(inline_keyboard=[[
                     InlineKeyboardButton(text="1 olmosga tirilish",
-                                         callback_data=f"revive:{gs.chat_id}:{p.user_id}")
+                                        callback_data=f"revive:{gs.chat_id}:{p.user_id}")
                 ]])
                 await bot.send_message(p.user_id, "1 olmosga tirilish?", reply_markup=revive_kb)
             except:
@@ -225,7 +261,7 @@ async def choose_card(callback: CallbackQuery):
     p = gs.players.get(callback.from_user.id)
     if p and p.alive:
         p.chosen_card = chosen
-    await callback.answer(f"{chosen} tanlandi!")
+        await callback.answer(f"{chosen} tanlandi!")
 
 @router.callback_query(F.data.startswith("revive:"))
 async def revive_player(callback: CallbackQuery):
@@ -239,8 +275,10 @@ async def revive_player(callback: CallbackQuery):
     p = gs.players.get(user_id)
     if not p or p.alive:
         return await callback.answer("Siz tiriksiniz.")
+
     if not remove_olmos(user_id, 1):
         return await callback.answer("Olmos yetarli emas! /profile")
+
     p.alive = True
     await callback.answer("TIRILDINGIZ!")
     await broadcast(callback.bot, chat_id, f"{p.name} 1 olmosga tirildi!")
@@ -279,6 +317,7 @@ async def night_phase(gs: GameState, bot):
             await bot.send_message(gs.madara_id, "Kimni zaharlamoqchisiz?", reply_markup=kb)
 
     await asyncio.sleep(NIGHT_DELAY)
+
     victim = gs.night_actions.get("najiro_kill")
     saved = gs.night_actions.get("qutqaruvchi_save")
     poison = gs.night_actions.get("madara_poison")
@@ -312,16 +351,20 @@ async def day_phase(gs: GameState, bot):
     await asyncio.sleep(NOMINATE_TIME)
 
     if not gs._nominee_counts:
+        nominee = random.choice([p for p in gs.players.values() if p.alive])
         alive_players = [p for p in gs.players.values() if p.alive]
+        
         if not alive_players:
             print("Hech kim tirik emas, o'yin tugadi!")
             return
         nominee = random.choice(alive_players)
+
     else:
         nominee_id = max(gs._nominee_counts.items(), key=lambda x: x[1])[0]
         nominee = gs.players[nominee_id]
 
     await broadcast(bot, gs.chat_id, f"<b>Nomzod:</b> {nominee.name}\nOvoz bering:")
+
     vote_state = {"hang": 0, "spare": 0}
     voters = set()
     kb = InlineKeyboardMarkup(inline_keyboard=[[
@@ -329,6 +372,7 @@ async def day_phase(gs: GameState, bot):
         InlineKeyboardButton(text="Qutqarish", callback_data=f"vote_spare:{gs.chat_id}:{nominee.user_id}")
     ]])
     vote_msg = await broadcast(bot, gs.chat_id, "Ovozlar: 0 - 0", reply_markup=kb)
+
     gs._temp_vote = {
         "vote_state": vote_state,
         "voters": voters,
@@ -368,7 +412,7 @@ async def najiro_kill(cb: CallbackQuery):
     if gs and cb.from_user.id == gs.najiro_id:
         _, _, tid = cb.data.split(":")
         gs.night_actions["najiro_kill"] = int(tid)
-    await cb.answer("Tanlandi!")
+        await cb.answer("Tanlandi!")
 
 @router.callback_query(F.data.startswith("qutqaruvchi_save:"))
 async def qutqaruvchi_save(cb: CallbackQuery):
@@ -377,7 +421,7 @@ async def qutqaruvchi_save(cb: CallbackQuery):
         _, _, tid = cb.data.split(":")
         gs.night_actions["qutqaruvchi_save"] = int(tid)
         gs.qutqaruvchi_used = True
-    await cb.answer("Saqlab qoldi!")
+        await cb.answer("Saqlab qoldi!")
 
 @router.callback_query(F.data.startswith("madara_poison:"))
 async def madara_poison(cb: CallbackQuery):
@@ -385,7 +429,7 @@ async def madara_poison(cb: CallbackQuery):
     if gs and cb.from_user.id == gs.madara_id:
         _, _, tid = cb.data.split(":")
         gs.night_actions["madara_poison"] = int(tid)
-    await cb.answer("Zaharlandi!")
+        await cb.answer("Zaharlandi!")
 
 @router.callback_query(F.data.startswith("nominate:"))
 async def nominate_player(cb: CallbackQuery):
@@ -394,7 +438,7 @@ async def nominate_player(cb: CallbackQuery):
         gs = active_games.get(int(cid))
         if gs and cb.from_user.id == int(vid):
             gs._nominee_counts[int(nid)] = gs._nominee_counts.get(int(nid), 0) + 1
-        await cb.answer("Nomzod qilindi!")
+            await cb.answer("Nomzod qilindi!")
     except: pass
 
 @router.callback_query(F.data.startswith("nominate_auto:"))
@@ -406,7 +450,7 @@ async def nominate_auto(cb: CallbackQuery):
             candidates = [p for p in gs.players.values() if p.alive and p.user_id != int(pid)]
             suspect = random.choice(candidates)
             gs._nominee_counts[suspect.user_id] = gs._nominee_counts.get(suspect.user_id, 0) + 1
-        await cb.answer(f"{suspect.name} tanlandi!")
+            await cb.answer(f"{suspect.name} tanlandi!")
     except: pass
 
 @router.callback_query(F.data.startswith("vote_hang:"))
@@ -437,22 +481,26 @@ async def end_game(gs: GameState, bot, result_text: str):
     roles = "\n".join(f"{p.name} — {p.role}" for p in gs.players.values())
     await broadcast(bot, gs.chat_id, f"{result_text}\n\n<b>Rollari:</b>\n{roles}")
 
+    # ──────── DB GA SAQLASH ────────
     for p in gs.players.values():
         user = get_user(p.user_id)
         if user:
             user['total_games'] += 1
             if p.alive or "g'alaba" in result_text.lower():
                 user['wins'] += 1
-            add_balls(p.user_id, 50)
-            user['last_game_result'] = "G'olib" if p.alive or "g'alaba" in result_text.lower() else "Mag'lub"
+                add_balls(p.user_id, 50)
+                user['last_game_result'] = "G'olib"
+            else:
+                user['last_game_result'] = "Mag'lub"
             user['last_game_date'] = datetime.now().strftime("%Y-%m-%d")
             save_user(user)
+
     delete_game_state(gs.chat_id)
     active_games.pop(gs.chat_id, None)
     gs.running = False
 
 # ────────────────────── GURUH XABARLARI TOZALASH ──────────────────────
-@router.message(F.chat.type.in_(["group", "supergroup"]))
+@router.message()
 async def delete_vote_messages(message: Message):
     gs = active_games.get(message.chat.id)
     if not gs or not gs.running or not gs._temp_vote:

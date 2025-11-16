@@ -71,6 +71,8 @@ def init_db():
             members_count INTEGER DEFAULT 1,
             clan_level INTEGER DEFAULT 1,
             clan_xp INTEGER DEFAULT 0,
+            clan_group TEXT DEFAULT 'Nomalum',
+            clan_channel TEXT DEFAULT 'Nomalum',
             created_at TEXT DEFAULT (datetime('now'))
         )
     ''')
@@ -87,8 +89,24 @@ def init_db():
               kanal_id INTEGER UNIQUE,
               kanal_link TEXT)
               ''')
-
     
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS kanallar(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kanal_link TEXT NOT NULL,
+            kanal_name TEXT NOT NULL
+        );
+    """)
+    c.execute("""
+              CREATE TABLE IF NOT EXISTS guruhlar(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    group_id INTEGER,
+                    group_name TEXT
+                );
+    """)
+    
+
+        
     conn.commit()
     conn.close()
 
@@ -101,6 +119,54 @@ def get_user(user_id: int) -> Optional[Dict[str, Any]]:
     row = c.fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def update_user_field(user_id: int, field: str, value):
+    # SQL Injection prevention
+    allowed_fields = ['username', 'bio', 'channel', 'user_group', 'clan_name']
+    if field not in allowed_fields:
+        raise ValueError(f"Field '{field}' not allowed for update")
+    
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute(f"UPDATE users SET {field}=? WHERE user_id=?", (value, user_id))
+    conn.commit()
+    conn.close()
+
+def join_clan(user_id: int, clan_name: str) -> bool:
+    clan = get_clan(clan_name)
+    user = get_user(user_id)
+
+    if not clan or not user:
+        return False
+
+    # TO‘G‘RI: Agar allaqachon shu klanda bo‘lsa — ruxsat berilmaydi
+    if user['clan_name'] == clan_name:
+        return False
+
+    # OLDINGI KLANdan chiqish (agar bo‘lsa)
+    old_clan_name = user['clan_name']
+    if old_clan_name != 'Yo‘q':
+        # Eski klandan a'zolar sonini kamaytirish
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("UPDATE clans SET members_count = members_count - 1 WHERE clan_name = ?", (old_clan_name,))
+        conn.commit()
+        conn.close()
+
+    # YANGI klanda qo‘shish
+    user['clan_name'] = clan_name
+    user['clan_role'] = 'Azo'
+    save_user(user)
+
+    # Yangi klanda a'zolar sonini oshirish
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE clans SET members_count = members_count + 1 WHERE clan_name = ?", (clan_name,))
+    conn.commit()
+    conn.close()
+
+    return True
 
 def save_user(user: Dict[str, Any]):
     user['last_active'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -180,23 +246,26 @@ def delete_game_state(chat_id: int):
     conn.close()
 
 # ------------------- CLAN -------------------
-def create_clan(clan_name: str, creator_id: int, description: str = "") -> bool:
+def create_clan(clan_name, creator_id, clan_description, clan_group, clan_channel):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    try:
-        c.execute('INSERT INTO clans (clan_name, clan_description, creator_id) VALUES (?, ?, ?)',
-                  (clan_name, description, creator_id))
-        conn.commit()
-        conn.close()
-        user = get_user(creator_id)
-        if user:
-            user['clan_name'] = clan_name
-            user['clan_role'] = 'Lider'
-            save_user(user)
-        return True
-    except sqlite3.IntegrityError:
+    
+    # Klan nomi mavjudligini tekshirish
+    c.execute("SELECT clan_name FROM clans WHERE clan_name = ?", (clan_name,))
+    if c.fetchone():
         conn.close()
         return False
+
+    # Yangi klan yaratish
+    c.execute('''
+    INSERT INTO clans 
+    (clan_name, clan_description, creator_id, clan_group, clan_channel)
+    VALUES (?, ?, ?, ?, ?)
+    ''', (clan_name, clan_description, creator_id, clan_group, clan_channel))
+    
+    conn.commit()
+    conn.close()
+    return True
 
 def get_clan(clan_name: str) -> Optional[Dict]:
     conn = sqlite3.connect(DB_FILE)
@@ -214,6 +283,8 @@ def join_clan(user_id: int, clan_name: str) -> bool:
         return False
     user['clan_name'] = clan_name
     user['clan_role'] = 'Azo'
+    user['clan_channel'] = clan['clan_channel']
+    user['clan_group'] = clan['clan_group']
     save_user(user)
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -221,3 +292,49 @@ def join_clan(user_id: int, clan_name: str) -> bool:
     conn.commit()
     conn.close()
     return True
+
+
+def fetch_all(query: str, params: tuple = ()) -> list:
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute(query, params)
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def execute_query(query: str, params: tuple = ()):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute(query, params)
+    conn.commit()
+    conn.close()
+
+
+def add_row(table: str, column_values: dict):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    columns = ', '.join(column_values.keys())
+    placeholders = ', '.join(['?'] * len(column_values))
+    values = tuple(column_values.values())
+    c.execute(f'INSERT INTO {table} ({columns}) VALUES ({placeholders})', values)
+    conn.commit()
+    conn.close()
+
+def show_clan(clan_name: str) -> Optional[Dict[str, Any]]:
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM clans WHERE clan_name = ?", (clan_name,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def all_clans() -> list:
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM clans")
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]

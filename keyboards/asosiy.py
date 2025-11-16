@@ -23,7 +23,7 @@ def main_menu() -> InlineKeyboardMarkup:
             )
         ],
         [
-            InlineKeyboardButton(text="📜 Guruhlarni ko'rish", callback_data=f"profile"),
+            InlineKeyboardButton(text="📜 Guruhlarni ko'rish", callback_data=f"guruhlar"),
         ],[
             InlineKeyboardButton(text="Yangiliklar", url="https://t.me/Alisa_Borderland"),
         ],[
@@ -31,14 +31,8 @@ def main_menu() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="💎 Olmoslar", callback_data=f"shop:diamonds")
         ],[
             InlineKeyboardButton(text="🌐 Tilni o'zgartirish", callback_data="lang"),
+        ],[
+            InlineKeyboardButton(text=" 🏰 Clan", callback_data="asosiy_clan")
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-
-def profile_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Olmos sotib olish", callback_data=f"shop:diamonds")],
-        [InlineKeyboardButton(text="Ballar", callback_data=f"balls_info")],
-        [InlineKeyboardButton(text="🔙 Ortga", callback_data="start")]
-    ])

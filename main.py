@@ -10,6 +10,8 @@ from aiogram import types
 from handlers.shop import router as shop_router
 from handlers.game import router as game_router
 from handlers.admin import router as admin_router
+from handlers.user import router as user_router
+from handlers.clan import router as clan_router
 bot = Bot(
     token=BOT_TOKEN,
     default=DefaultBotProperties(parse_mode="HTML")
@@ -28,12 +30,17 @@ async def set_default_commands(bot: Bot):
     )
 
 # Routerlarni qo'shamiz
-dp.include_router(start_router)
+
+dp.include_router(clan_router)
+dp.include_router(admin_router)
+dp.include_router(game_router)
+dp.include_router(shop_router)
 dp.include_router(lang_router)
 dp.include_router(profile_router)
-dp.include_router(shop_router)
-dp.include_router(game_router)
-dp.include_router(admin_router)
+dp.include_router(user_router)
+dp.include_router(start_router)
+
+
 async def main():
     print("Bot ishga tushdi...")
     await set_default_commands(bot)

@@ -2,7 +2,6 @@ from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from database.user_models import get_user, add_olmos
 from locales import t
-from keyboards.asosiy import profile_keyboard
 from config import ADMIN_GROUP_ID,PACKAGES
 
 router = Router()
@@ -37,8 +36,6 @@ async def process_buy_olmos(callback: CallbackQuery):
     _, package, user_id = callback.data.split(":")
     user_id = int(user_id)
     info = PACKAGES[package]
-
-    # Tanlangan paketni saqlaymiz
     user_selected_package[user_id] = info
 
     lang = get_user(user_id).get("language", "uz")

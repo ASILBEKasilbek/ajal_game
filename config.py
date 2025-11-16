@@ -30,6 +30,10 @@ PACKAGES = {
 }
 
 
-CARDS=[
-    "Chillik", "Toppon", "G'ishtin", "Qirol Qarg'a"
+CARDS = [
+    "🃏 ♣️ Chillik",
+    "🃏 ♥️ Toppon",
+    "🃏 ♦️ G'ishtin",
+    "🃏 ♠️ Qirol Qarg'a"
 ]
+JOIN_TIME = 60  # seconds

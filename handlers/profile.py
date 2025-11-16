@@ -1,26 +1,29 @@
 # handlers/profile.py
 from aiogram import Router, F
-from aiogram.types import CallbackQuery
-from database.user_models import get_user
+from aiogram.types import CallbackQuery, Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.fsm.context import FSMContext
+# from database.user_models import get_user
+from database.db import update_user_field,get_user
 from locales import t
-from keyboards.asosiy import profile_keyboard
-from aiogram.types import FSInputFile
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime
-from aiogram.types import Message
 import sqlite3
-from datetime import datetime
 from config import DB_FILE
 
 router = Router()
 
+# ────────────────────── FSM States ──────────────────────
+class ProfileEditStates(StatesGroup):
+    waiting_for_value = State()
+
+# ────────────────────── FORMAT PROFILE ──────────────────────
 def format_user_profile(user: dict, lang: str) -> str:
     if lang == "uz":
         profile_text = f"""
 ────────────────────────────
 👤 <b>Sizning profilingiz</b>
 ────────────────────────────
-📝 <b>Ism:</b> {user.get('first_name', 'Nomalum')} ({user.get('username', 'Nomalum')})
+📝 <b>Ism:</b> {user.get('first_name', 'Nomalum')} (@{user.get('username', 'Nomalum')})
 🆔 <b>ID:</b> {user.get('user_id', 'Nomalum')}
 ────────────────────────────
 ⚔️ <b>LVL:</b> {user.get('level', 0)} 💀 ({user.get('xp', 0)} HP)
@@ -30,18 +33,18 @@ def format_user_profile(user: dict, lang: str) -> str:
 🎁 <b>Ballar:</b> {user.get('balls', 0)}
 💖 <b>PP (Mashhurlik):</b> {user.get('popularity', 0)} 🔺(+{user.get('popularity_today', 0)} bugun)
 ────────────────────────────
-🎮 <b>Jami o‘yinlar:</b> {user.get('total_games', 0)}
-🏆 <b>G‘alabalar:</b> {user.get('wins', 0)}
+🎮 <b>Jami o'yinlar:</b> {user.get('total_games', 0)}
+🏆 <b>G'alabalar:</b> {user.get('wins', 0)}
 📊 <b>Reyting:</b> #{user.get('rating', 0)}
 ────────────────────────────
-⚔️ <b>So‘nggi o‘yin natijasi:</b> {'✅ G‘alaba' if user.get('last_game_result') == 'win' else '❌ Mag‘lubiyat'} ({user.get('last_game_date', 'Nomalum')})
+⚔️ <b>So'nggi o'yin:</b> {"✅ G'alaba" if user.get('last_game_result') == 'win' else "❌ Mag'lubiyat"} ({user.get('last_game_date', 'Nomalum')})
 ────────────────────────────
-🧬 <b>Bio:</b> “{user.get('bio', 'Bio yozilmagan')}”  
+🧬 <b>Bio:</b> "{user.get('bio', 'Bio yozilmagan')}"  
 ────────────────────────────
 🔗 <b>Kanal:</b> {user.get('channel', 'Nomalum')}
 💬 <b>Guruh:</b> {user.get('user_group', 'Nomalum')}
 ────────────────────────────
-👥 <b>Clan:</b> {user.get('clan_name', 'Yo‘q')}
+👥 <b>Clan:</b> {user.get('clan_name', 'Yoq')}
 🎖 <b>Clan roli:</b> {user.get('clan_role', 'Azo')}
 🏅 <b>Clan LVL:</b> {user.get('clan_level', 0)} ({user.get('clan_xp', 0)} / {user.get('clan_xp_next', 800)} XP)
 📊 <b>Clan reytingi:</b> #{user.get('clan_rank', 0)} / {user.get('total_clans', 0)} klan
@@ -50,16 +53,16 @@ def format_user_profile(user: dict, lang: str) -> str:
 ────────────────────────────
 🕒 <b>Oxirgi kirish:</b> {user.get('last_active', 'Nomalum')}
 ⏳ <b>Davringiz:</b> {(datetime.now()-datetime.strptime(user.get('created_at', 'Nomalum'), "%Y-%m-%d %H:%M:%S")).days} kun
-🌐 <b>Til:</b> {user.get('language_code', '🇺🇿 UZ')}
+🌐 <b>Til:</b> {user.get('language', '🇺🇿 UZ')}
 ────────────────────────────
-    """.strip()
+        """.strip()
 
     elif lang == "eng":
         profile_text = f"""
 ────────────────────────────
 👤 <b>Your Profile</b>
 ────────────────────────────
-📝 <b>Name:</b> {user.get('first_name', 'Unknown')} ({user.get('username', 'Unknown')})
+📝 <b>Name:</b> {user.get('first_name', 'Unknown')} (@{user.get('username', 'Unknown')})
 🆔 <b>ID:</b> {user.get('user_id', 'Unknown')}
 ────────────────────────────
 ⚔️ <b>LVL:</b> {user.get('level', 0)} 💀 ({user.get('xp', 0)} HP)
@@ -73,9 +76,9 @@ def format_user_profile(user: dict, lang: str) -> str:
 🏆 <b>Wins:</b> {user.get('wins', 0)}
 📊 <b>Rating:</b> #{user.get('rating', 0)}
 ────────────────────────────
-⚔️ <b>Last Game Result:</b> {'✅ Win' if user.get('last_game_result') == 'win' else '❌ Defeat'} ({user.get('last_game_date', 'Unknown')})
+⚔️ <b>Last Game:</b> {'✅ Win' if user.get('last_game_result') == 'win' else '❌ Defeat'} ({user.get('last_game_date', 'Unknown')})
 ────────────────────────────
-🧬 <b>Bio:</b> “{user.get('bio', 'No bio written')}”
+🧬 <b>Bio:</b> "{user.get('bio', 'No bio written')}"
 ────────────────────────────
 🔗 <b>Channel:</b> {user.get('channel', 'Unknown')}
 💬 <b>Group:</b> {user.get('user_group', 'Unknown')}
@@ -89,16 +92,16 @@ def format_user_profile(user: dict, lang: str) -> str:
 ────────────────────────────
 🕒 <b>Last Active:</b> {user.get('last_active', 'Unknown')}
 ⏳ <b>Days in Game:</b> {(datetime.now()-datetime.strptime(user.get('created_at', 'Nomalum'), "%Y-%m-%d %H:%M:%S")).days} days
-🌐 <b>Language:</b> {user.get('language_code', '🇬🇧 EN')}
+🌐 <b>Language:</b> {user.get('language', '🇬🇧 EN')}
 ────────────────────────────
-    """.strip()
+        """.strip()
 
     elif lang == "ru":
         profile_text = f"""
 ────────────────────────────
 👤 <b>Ваш профиль</b>
 ────────────────────────────
-📝 <b>Имя:</b> {user.get('first_name', 'Неизвестно')} ({user.get('username', 'Неизвестно')})
+📝 <b>Имя:</b> {user.get('first_name', 'Неизвестно')} (@{user.get('username', 'Неизвестно')})
 🆔 <b>ID:</b> {user.get('user_id', 'Неизвестно')}
 ────────────────────────────
 ⚔️ <b>Уровень:</b> {user.get('level', 0)} 💀 ({user.get('xp', 0)} HP)
@@ -114,7 +117,7 @@ def format_user_profile(user: dict, lang: str) -> str:
 ────────────────────────────
 ⚔️ <b>Последний результат:</b> {'✅ Победа' if user.get('last_game_result') == 'win' else '❌ Поражение'} ({user.get('last_game_date', 'Неизвестно')})
 ────────────────────────────
-🧬 <b>Био:</b> “{user.get('bio', 'Био не указано')}”
+🧬 <b>Био:</b> "{user.get('bio', 'Био не указано')}"
 ────────────────────────────
 🔗 <b>Канал:</b> {user.get('channel', 'Неизвестно')}
 💬 <b>Группа:</b> {user.get('user_group', 'Неизвестно')}
@@ -128,87 +131,115 @@ def format_user_profile(user: dict, lang: str) -> str:
 ────────────────────────────
 🕒 <b>Последний вход:</b> {user.get('last_active', 'Неизвестно')}
 ⏳ <b>Дни в игре:</b> {(datetime.now()-datetime.strptime(user.get('created_at', 'Nomalum'), "%Y-%m-%d %H:%M:%S")).days} дней
-🌐 <b>Язык:</b> {user.get('language_code', '🇷🇺 RU')}
+🌐 <b>Язык:</b> {user.get('language', '🇷🇺 RU')}
 ────────────────────────────
-    """.strip()
+        """.strip()
 
     else:
         profile_text = "❌ Unknown language selected."
 
     return profile_text
 
-
+# ────────────────────── SHOW PROFILE ──────────────────────
 @router.callback_query(F.data == "profile")
 async def show_profile(callback: CallbackQuery):
     user = get_user(callback.from_user.id)
-    lang = user["language"]
-    text1=format_user_profile(user,lang)
-    photo = FSInputFile("ajal_image.jpg") 
-    keyboard=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Profilini o'zgartirish", callback_data=f"profile_edit")]
-        # [InlineKeyboardButton(text="🔙 Ortga", callback_data="start")]
-    ])
-
-    await callback.message.answer_photo(
+    if not user:
+        return await callback.answer("❌ Foydalanuvchi topilmadi!", show_alert=True)
+    
+    lang = user.get("language", "uz")
+    text = format_user_profile(user, lang)
+    
+    try:
+        photo = FSInputFile("ajal_image.jpg")
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✏️ Profilni tahrirlash", callback_data="profile_edit")],
+            [InlineKeyboardButton(text="🔙 Ortga", callback_data="start")]
+        ])
+        
+        await callback.message.answer_photo(
             photo=photo,
-            caption=text1,
+            caption=text,
             reply_markup=keyboard
         )
-    
+        await callback.answer()
+    except Exception as e:
+        print(f"Profile show error: {e}")
+        await callback.message.answer(text, reply_markup=keyboard)
 
+# ────────────────────── EDIT PROFILE MENU ──────────────────────
 @router.callback_query(F.data == "profile_edit")
 async def edit_profile(callback: CallbackQuery):
-    user = get_user(callback.from_user.id)
-    text = "Edit uchun profile bo'limini tanlang."
-
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Username", callback_data="edit_username"), InlineKeyboardButton(text="Bio", callback_data="edit_bio")],
-        [InlineKeyboardButton(text="Kanal", callback_data="edit_channel"), InlineKeyboardButton(text="Guruh", callback_data="edit_user_group")],
-        [InlineKeyboardButton(text="Clan", callback_data="edit_clan_name"), InlineKeyboardButton(text="🔙 Ortga", callback_data="profile")]
+        [
+            InlineKeyboardButton(text="📝 Username", callback_data="edit_username"),
+            InlineKeyboardButton(text="🧬 Bio", callback_data="edit_bio")
+        ],
+        [
+            InlineKeyboardButton(text="📢 Kanal", callback_data="edit_channel"),
+            InlineKeyboardButton(text="💬 Guruh", callback_data="edit_user_group")
+        ],
+        [
+            InlineKeyboardButton(text="👥 Clan", callback_data="edit_clan_name"),
+            InlineKeyboardButton(text="🔙 Ortga", callback_data="profile")
+        ]
     ])
     
-    await callback.message.answer(text, reply_markup=keyboard)
+    await callback.message.edit_caption(
+        caption="✏️ <b>Tahrirlash uchun bo'limni tanlang:</b>",
+        reply_markup=keyboard
+    )
+    await callback.answer()
 
-edit_states = {}
-
+# ────────────────────── EDIT FIELD START ──────────────────────
 @router.callback_query(F.data.startswith("edit_"))
-async def handle_profile_edit(callback: CallbackQuery):
-    field = callback.data.replace("edit_", "")  
-    if field == "user_group":
-        field1 = "Guruh"
-    elif field == "channel":
-        field1 = "Kanal"
-    elif field == "clan_name":
-        field1 = "Clan"
-    else:
-        field1 = field.capitalize()
-    await callback.message.answer(f"Yangi {field1} ni kiriting:")
+async def handle_profile_edit(callback: CallbackQuery, state: FSMContext):
+    field = callback.data.replace("edit_", "")
+    
+    field_names = {
+        "username": "Username",
+        "bio": "Bio",
+        "channel": "Kanal",
+        "user_group": "Guruh",
+        "clan_name": "Clan"
+    }
+    
+    field_display = field_names.get(field, field.capitalize())
+    
+    await callback.message.answer(
+        f"✏️ Yangi <b>{field_display}</b> kiriting:\n\n"
+        f"<i>Bekor qilish uchun /cancel yuboring</i>",
+        parse_mode="HTML"
+    )
+    
+    await state.set_state(ProfileEditStates.waiting_for_value)
+    await state.update_data(field=field)
+    await callback.answer()
 
-    edit_states[callback.from_user.id] = field
-
-@router.message()
-async def save_profile_edit(message: Message):
-    user_id = message.from_user.id
-    if user_id in edit_states:
-        field = edit_states.pop(user_id)
-        value = message.text.strip()
-        update_user_field(user_id, field, value)
-        await message.answer(f"{field} muvaffaqiyatli yangilandi: {value}")
-
-def get_user(user_id: int):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
-    row = c.fetchone()
-    conn.close()
-    if row:
-        columns = [col[0] for col in c.description]
-        return dict(zip(columns, row))
-    return None
-
-def update_user_field(user_id: int, field: str, value):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute(f"UPDATE users SET {field}=? WHERE user_id=?", (value, user_id))
-    conn.commit()
-    conn.close()
+# ────────────────────── SAVE EDIT (FSM) ──────────────────────
+@router.message(ProfileEditStates.waiting_for_value)
+async def save_profile_edit(message: Message, state: FSMContext):
+    data = await state.get_data()
+    field = data.get("field")
+    
+    if message.text == "/cancel":
+        await state.clear()
+        return await message.answer("❌ Tahrirlash bekor qilindi.")
+    
+    value = message.text.strip()
+    
+    # Validation (optional)
+    if len(value) > 200:
+        return await message.answer("❌ Qiymat juda uzun! (max 200 belgi)")
+    
+    try:
+        update_user_field(message.from_user.id, field, value)
+        await message.answer(
+            f"✅ <b>{field.replace('_', ' ').title()}</b> muvaffaqiyatli yangilandi!\n\n"
+            f"📝 Yangi qiymat: <code>{value}</code>",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        await message.answer(f"❌ Xatolik: {str(e)}")
+    finally:
+        await state.clear()

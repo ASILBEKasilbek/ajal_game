@@ -75,46 +75,11 @@ def save_user_language_only(user_id: int, language: str):
     conn.commit()
     conn.close()
 
-def add_olmos(user_id: int, amount: int) -> bool:
+
+def get_guruhlar():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT olmos FROM users WHERE user_id = ?", (user_id,))
-    result = c.fetchone()
-    if result:
-        current_olmos = result[0] or 0
-        new_olmos = current_olmos + amount
-        c.execute(
-            "UPDATE users SET olmos = ?, last_active = ? WHERE user_id = ?",
-            (new_olmos, datetime.now().strftime("%Y-%m-%d %H:%M"), user_id)
-        )
-        conn.commit()
-        conn.close()
-        return True
-
+    c.execute("SELECT kanal_link FROM kanallar")
+    rows = c.fetchall()
     conn.close()
-    return False
-
-
-def add_balls(user_id, amount):
-    user = get_user(user_id)
-    if user:
-        user['balls'] += amount
-        save_user(user)
-        return True
-    return False
-
-def remove_olmos(user_id, amount):
-    user = get_user(user_id)
-    if user and user['olmos'] >= amount:
-        user['olmos'] -= amount
-        save_user(user)
-        return True
-    return False
-
-def remove_balls(user_id, amount):
-    user = get_user(user_id)
-    if user and user['balls'] >= amount:
-        user['balls'] -= amount
-        save_user(user)
-        return True
-    return False
+    return [row[0] for row in rows]
