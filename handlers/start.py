@@ -61,6 +61,11 @@ async def handle_game_join(message: Message):
         )
     except Exception as e:
         print(f"Lobby update error: {e}")
+    # bot_info = await message.bot.get_me()
+    # url = f"https://t.me/{bot_info.username}?start=game_{chat_id}"
+    # url = f"https://t.me/c/{str(chat_id)[4:]}"
+    url = gs.group_invite_link
+
 
     # Foydalanuvchiga tasdiq
     return await message.answer(
@@ -68,7 +73,7 @@ async def handle_game_join(message: Message):
         "O'yin boshlanishini kuting...\n"
         "Guruhga qaytish uchun pastdagi tugmani bosing.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="Guruhga qaytish", url=f"t.me/c/{str(chat_id)[4:]}")
+            InlineKeyboardButton(text="Guruhga qaytish", url=url)
         ]]),
         parse_mode="HTML"
     )

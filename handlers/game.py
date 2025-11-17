@@ -94,6 +94,7 @@ class GameState:
     _nominee_counts: Dict[int, int] = field(default_factory=dict)
     _temp_vote: Optional[Dict] = None
     game_winners: list = field(default_factory=list)
+    group_invite_link: str = ""
 
 # ────────────────────── YORDAMCHILAR ──────────────────────
 def migrate_db():
@@ -135,6 +136,7 @@ def calculate_level(hp: int) -> int:
         else:
             req = int(req * 1.6)  # exponential o'sish
     return 100
+
 def get_rank_by_name(name: str):
     return next((r for r in RANKS if r["name"] == name), RANKS[0])
 
@@ -199,6 +201,9 @@ def get_role_description(role: str) -> str:
 # ────────────────────── LOBBY ──────────────────────
 @router.message(Command("game"))
 async def start_game(message: Message):
+    # print(vars(message))
+    # for i in message:
+    #     print(i)
     chat_id = message.chat.id
     bot = message.bot
     if chat_id in active_games and active_games[chat_id].running:
@@ -218,7 +223,10 @@ async def start_game(message: Message):
         reply_markup=kb, parse_mode="HTML"
     )
 
-    gs = GameState(chat_id=chat_id, lobby_message_id=msg.message_id)
+    # gs = GameState(chat_id=chat_id, lobby_message_id=msg.message_id)
+    # active_games[chat_id] = gs
+    username=message.chat.username
+    gs = GameState(chat_id=chat_id, lobby_message_id=msg.message_id, group_invite_link=f"https://t.me/{username}")
     active_games[chat_id] = gs
 
     await asyncio.sleep(JOIN_TIME)
