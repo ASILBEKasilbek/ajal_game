@@ -37,7 +37,8 @@ async def handle_game_join(message: Message):
         return await message.answer("Siz allaqachon qo'shilgansiz!")
 
     # Qo'shish
-    gs.players[user.id] = Player(user_id=user.id, name=user.full_name)
+    username=get_user(user.id)["username"]
+    gs.players[user.id] = Player(user_id=user.id, name=username)
 
     # Lobby yangilash
     try:
@@ -71,6 +72,7 @@ async def handle_game_join(message: Message):
         ]]),
         parse_mode="HTML"
     )
+
 
 @router.callback_query(F.data == "start")
 async def back_to_start(callback: CallbackQuery):

@@ -14,7 +14,7 @@ def init_db():
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
-            username TEXT,
+            username TEXT UNIQUE,
             first_name TEXT,
             last_name TEXT,
             language TEXT DEFAULT 'uz',

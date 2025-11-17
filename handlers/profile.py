@@ -225,7 +225,16 @@ async def save_profile_edit(message: Message, state: FSMContext):
     if message.text == "/cancel":
         await state.clear()
         return await message.answer("❌ Tahrirlash bekor qilindi.")
-    
+    if field == "username":
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT 1 FROM users WHERE username = ?", (value,))
+        exists = c.fetchone()
+        conn.close()
+        
+        if exists:
+            return await message.answer("❌ Bu username allaqachon band. Iltimos boshqa username tanlang.")
+
     value = message.text.strip()
     
     # Validation (optional)
