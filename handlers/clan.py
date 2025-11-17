@@ -52,8 +52,8 @@ def migrate_clan_db():
     c.execute("UPDATE users SET clan_role = 'Azo' WHERE clan_role IN ('Azo', '', NULL)")
     conn.commit()
     conn.close()
-    
-# migrate_clan_db()
+
+migrate_clan_db()
 
 # --- LINK NORMALIZATSIYA ---
 def normalize_link(link: str) -> str:
