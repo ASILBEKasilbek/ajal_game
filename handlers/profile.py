@@ -154,7 +154,7 @@ async def show_profile(callback: CallbackQuery):
         photo = FSInputFile("ajal_image.jpg")
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✏️ Profilni tahrirlash", callback_data="profile_edit")],
-            [InlineKeyboardButton(text="🔙 Ortga", callback_data="start")]
+            [InlineKeyboardButton(text="🔙 Ortga", callback_data="rasm_start")]
         ])
         
         await callback.message.answer_photo(

@@ -20,6 +20,50 @@ from config import CARD_CHOICE_TIME, NIGHT_DELAY, NOMINATE_TIME, GROUP_VOTE_TIME
 router = Router()
 active_games: Dict[int, 'GameState'] = {}
 
+RANKS = [
+    {"name": "ACE", "emoji": "🔥", "min_hp": 0, "next_hp": 2500},
+    {"name": "ACE MASTER", "emoji": "⚡️", "min_hp": 2500, "next_hp": 6000},
+    {"name": "ACE DOMINATOR", "emoji": "💀", "min_hp": 6000, "next_hp": 10000},
+    {"name": "ZAVA", "emoji": "👑", "min_hp": 10000, "next_hp": None},
+]
+RANK_UP_MESSAGES = {
+    "ACE": """
+🎉 RANK UP!
+✨ Siz endi ACE bo‘ldingiz!
+🔥 O‘yin maydonida sizni endi hech kim to‘xtata olmaydi!
+🕹 Har bir g‘alaba — kuch, har bir mag‘lubiyat — saboq.
+    """,
+    "ACE MASTER": """
+⚡ Yangi daraja!
+🔥 Siz ACE MASTER maqomiga yetdingiz!
+💀 Sizdan qo‘rqishadi, chunki siz o‘yin maydonining ustasisiz!
+🌪 Har bir raqib endi siz uchun oddiy sinov xolos.
+    """,
+    "ACE DOMINATOR": """
+💥 E’tibor! E’tibor!
+🏆 Siz ACE DOMINATOR bo‘ldingiz!
+🚀 Sizning nomingiz endi reyting tepasida porlaydi!
+⚔️ Bu darajaga faqat eng kuchlilar chiqadi.
+    """,
+    "ZAVA": """
+🔥🔥🔥 IMKONSIZ! 🔥🔥🔥
+👑 Siz endi ZAVA — afsonaga aylangansiz!
+💫 Sizni endi na vaqt, na raqib to‘xtata oladi.
+🌍 O‘yin sizni eslab qoladi… abadiy.
+    """,
+}
+HP_BONUS = {"ACE": 8, "ACE MASTER": 10, "ACE DOMINATOR": 12, "ZAVA": 15}
+HP_PENALTY = {"ACE": -5, "ACE MASTER": -8, "ACE DOMINATOR": -10, "ZAVA": -12}
+
+# Level progression (hp_required_for_next, cumulative)
+LEVEL_PROGRESSION = [
+    (0, 0),  # lvl 1
+    (20, 20), (40, 60), (60, 120), (90, 210), (130, 340), (180, 520), (250, 770), (350, 1120), (500, 1620),  # 2-10
+]
+STREAK_WIN_BONUS = 25  # 3 ketma-ket win
+STREAK_LOSE_PENALTY = -20  # 3 ketma-ket lose
+
+GAME_RESULT_HP = {"win": 10, "lose": 3, "draw": 5}
 @dataclass
 class Player:
     user_id: int
@@ -31,7 +75,6 @@ class Player:
     can_save: bool = False
     card: Optional[str] = None
     chosen_card: Optional[str] = None
-
 @dataclass
 class GameState:
     chat_id: int
@@ -50,8 +93,72 @@ class GameState:
     card_message_id: Optional[int] = None
     _nominee_counts: Dict[int, int] = field(default_factory=dict)
     _temp_vote: Optional[Dict] = None
+    game_winners: list = field(default_factory=list)
 
 # ────────────────────── YORDAMCHILAR ──────────────────────
+def migrate_db():
+    import sqlite3
+    from database.db import DB_FILE
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    # Yangi ustunlar qo'shish (agar yo'q bo'lsa)
+    c.execute("PRAGMA table_info(users)")
+    columns = [col[1] for col in c.fetchall()]
+    if 'hp' not in columns:
+        c.execute("ALTER TABLE users ADD COLUMN hp INTEGER DEFAULT 0")
+    if 'current_rank' not in columns:
+        c.execute("ALTER TABLE users ADD COLUMN current_rank TEXT DEFAULT 'ACE'")
+    if 'streak' not in columns:
+        c.execute("ALTER TABLE users ADD COLUMN streak INTEGER DEFAULT 0")
+    if 'streak_type' not in columns:
+        c.execute("ALTER TABLE users ADD COLUMN streak_type TEXT DEFAULT NULL")
+    conn.commit()
+    conn.close()
+
+migrate_db()
+
+def calculate_level(hp: int) -> int:
+    # Dynamic level hisoblash (jadval bo'yicha)
+    cumulative = 0
+    level = 1
+    req = 20
+    multiplier = 1.5  # taxminiy exponential
+    for l in range(2, 101):
+        if hp < cumulative + req:
+            return level
+        cumulative += req
+        level += 1
+        if l <= 10:
+            req = {2:40,3:60,4:90,5:130,6:180,7:250,8:350,9:500,10:800}[l]
+        elif l <= 15:
+            req = int(1000 + (l-10)*400)  # 800-2000
+        else:
+            req = int(req * 1.6)  # exponential o'sish
+    return 100
+def get_rank_by_name(name: str):
+    return next((r for r in RANKS if r["name"] == name), RANKS[0])
+
+def get_current_rank(hp: int) -> dict:
+    for rank in reversed(RANKS):
+        if hp >= rank["min_hp"]:
+            return rank
+    return RANKS[0]
+
+def update_rank_and_level(user: dict, old_hp: int):
+    old_rank = get_rank_by_name(user.get('current_rank', 'ACE'))
+    new_rank_obj = get_current_rank(user['hp'])
+    user['current_rank'] = new_rank_obj["name"]
+
+    # Rank up message
+    if user['hp'] >= old_rank["next_hp"] and old_rank["next_hp"] is not None and old_hp < old_rank["next_hp"]:
+        return RANK_UP_MESSAGES.get(user['current_rank'], "")
+
+    # ZAVA downgrade
+    if old_rank["name"] == "ZAVA" and user['hp'] < 10000:
+        user['current_rank'] = "ACE DOMINATOR"
+        return "⚠️ ZAVA rankidan tushdingiz! HP 10,000 dan pastga tushdi."
+
+    return None
 async def safe_delete(bot, chat_id: int, message_id: Optional[int]):
     if message_id:
         try:
@@ -148,6 +255,8 @@ async def begin_game(gs: GameState, bot):
         await bot.send_message(p.user_id,
             f"<b>Rolingiz:</b> {p.role}\n\n{get_role_description(p.role)}",
             parse_mode="HTML")
+    
+    await send_other_players_cards(gs, bot)
 
     await broadcast(bot, gs.chat_id,
         f"<b>O'yin boshlandi!</b>\nIshtirokchilar: {len(gs.players)}")
@@ -174,15 +283,47 @@ async def begin_game(gs: GameState, bot):
         await day_phase(gs, bot)
         await asyncio.sleep(2)
 
+# ────────────────────── HAR BIR PLAYERGA QOLGANLARNING KARTASI ──────────────────────
+async def send_other_players_cards(gs: GameState, bot):
+    for user_id, player in gs.players.items():
+        others = [p for p in gs.players.values() if p.user_id != user_id]
+
+        text = "🃏 <b>Boshqa o'yinchilar kartalari:</b>\n\n"
+
+        for o in others:
+            text += f"• <b>{o.name}</b> — {o.card}\n"
+
+        await bot.send_message(user_id, text, parse_mode="HTML")
+
 # ────────────────────── KARTA FAZASI ──────────────────────
 async def card_phase(gs: GameState, bot):
     assign_cards(gs)
     gs.card_phase_active = True
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=card, callback_data=f"choose_card:{gs.chat_id}:{i}")]
-        for i, card in enumerate(CARDS)
-    ])
-    msg = await broadcast(bot, gs.chat_id, "Karta tanlang!", reply_markup=kb)
+
+    # --- 2x2 KARTALAR DIZAYNI ---
+    keyboard_rows = []
+    row = []
+
+    for i, card in enumerate(CARDS):
+        row.append(
+            InlineKeyboardButton(
+                text=card,
+                callback_data=f"choose_card:{gs.chat_id}:{i}"
+            )
+        )
+
+        # Har 2 ta kartadan keyin yangi qatordan boshlaymiz
+        if len(row) == 2:
+            keyboard_rows.append(row)
+            row = []
+
+    # Agar oxirgi qator 1 ta karta bilan qolsa - baribir qo‘shamiz
+    if row:
+        keyboard_rows.append(row)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+
+    msg = await broadcast(bot, gs.chat_id, "🃏 <b>Karta tanlang!</b>", reply_markup=kb, parse_mode="HTML")
     gs.card_message_id = msg.message_id
 
     await asyncio.sleep(CARD_CHOICE_TIME)
@@ -193,15 +334,21 @@ async def card_phase(gs: GameState, bot):
         if p.alive and p.chosen_card != p.card:
             p.alive = False
             killed.append(p.name)
+
             others = [f"{pl.name} — {pl.card}" for pl in gs.players.values()
                       if pl.alive and pl.user_id != p.user_id]
+
             try:
-                await bot.send_message(p.user_id,
+                await bot.send_message(
+                    p.user_id,
                     f"Siz o'ldingiz!\n\nBoshqalar kartalari:\n" + "\n".join(others),
-                    parse_mode="HTML")
+                    parse_mode="HTML"
+                )
                 revive_kb = InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(text="1 olmosga tirilish",
-                                         callback_data=f"revive:{gs.chat_id}:{p.user_id}")
+                    InlineKeyboardButton(
+                        text="1 olmosga tirilish",
+                        callback_data=f"revive:{gs.chat_id}:{p.user_id}"
+                    )
                 ]])
                 await bot.send_message(p.user_id, "1 olmosga tirilish?", reply_markup=revive_kb)
             except:
@@ -209,6 +356,7 @@ async def card_phase(gs: GameState, bot):
 
     if killed:
         await broadcast(bot, gs.chat_id, f"O'ldirildi: {', '.join(killed)}")
+
     await safe_delete(bot, gs.chat_id, gs.card_message_id)
     gs.card_message_id = None
 
@@ -437,16 +585,68 @@ async def end_game(gs: GameState, bot, result_text: str):
     roles = "\n".join(f"{p.name} — {p.role}" for p in gs.players.values())
     await broadcast(bot, gs.chat_id, f"{result_text}\n\n<b>Rollari:</b>\n{roles}")
 
+    # G'olib faction aniqlash
+    najiro_team_win = any("najiro" in result_text.lower() or "orochimaru" in result_text.lower() for _ in [0])
+    madara_win = "madara" in result_text.lower()
+    peace_win = "tinch" in result_text.lower()
+
     for p in gs.players.values():
         user = get_user(p.user_id)
-        if user:
-            user['total_games'] += 1
-            if p.alive or "g'alaba" in result_text.lower():
+        if not user:
+            continue
+
+        user['total_games'] += 1
+        add_balls(p.user_id, 50)  # bazaviy balls
+
+        is_winner = p.alive
+        result_key = "win" if is_winner else "lose"
+        if "durang" in result_text.lower():
+            result_key = "draw"
+
+        # Streak update
+        old_streak = user.get('streak', 0)
+        old_type = user.get('streak_type')
+        if old_type == result_key:
+            user['streak'] = old_streak + 1
+        else:
+            user['streak'] = 1
+            user['streak_type'] = result_key
+
+        # Base HP from result
+        base_hp = GAME_RESULT_HP[result_key]
+        vip_multiplier = 1.5 if user.get('olmos', 0) > 0 else 1.0  # misol VIP
+        hp_gain = int(base_hp * vip_multiplier)
+
+        # Rank-based bonus/penalty
+        rank = get_rank_by_name(user.get('current_rank', 'ACE'))
+        if is_winner:
+            hp_gain += HP_BONUS[rank["name"]]
+            if user['wins'] > 0:
                 user['wins'] += 1
-            add_balls(p.user_id, 50)
-            user['last_game_result'] = "G'olib" if p.alive or "g'alaba" in result_text.lower() else "Mag'lub"
-            user['last_game_date'] = datetime.now().strftime("%Y-%m-%d")
-            save_user(user)
+        else:
+            hp_gain += HP_PENALTY[rank["name"]]
+
+        # Streak bonus
+        if user['streak'] == 3 and user['streak_type'] == "win":
+            hp_gain += STREAK_WIN_BONUS
+        elif user['streak'] == 3 and user['streak_type'] == "lose":
+            hp_gain += STREAK_LOSE_PENALTY
+
+        old_hp = user.get('hp', 0)
+        user['hp'] = max(0, old_hp + hp_gain)  # salbiy bo'lmasin
+
+        # Level update (hp orqali)
+        user['level'] = calculate_level(user['hp'])
+
+        # Rank update va xabar
+        rank_message = update_rank_and_level(user, old_hp)
+        if rank_message:
+            await bot.send_message(p.user_id, rank_message.strip())
+
+        user['last_game_result'] = "G'olib" if is_winner else "Mag'lub"
+        user['last_game_date'] = datetime.now().strftime("%Y-%m-%d")
+        save_user(user)
+
     delete_game_state(gs.chat_id)
     active_games.pop(gs.chat_id, None)
     gs.running = False

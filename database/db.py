@@ -330,11 +330,122 @@ def show_clan(clan_name: str) -> Optional[Dict[str, Any]]:
     conn.close()
     return dict(row) if row else None
 
+# def all_clans() -> list:
+#     conn = sqlite3.connect(DB_FILE)
+#     conn.row_factory = sqlite3.Row
+#     c = conn.cursor()
+#     c.execute("SELECT * FROM clans")
+#     rows = c.fetchall()
+#     conn.close()
+#     return [dict(row) for row in rows]
+
 def all_clans() -> list:
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    c.execute("SELECT * FROM clans")
+
+    c.execute("""
+        SELECT * FROM clans
+        ORDER BY clan_xp DESC
+        LIMIT 10
+    """)
+
     rows = c.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+# Yangi funksiyalar
+
+def leave_clan(user_id: int) -> bool:
+    user = get_user(user_id)
+    if not user or user['clan_name'] == 'Yo‘q':
+        return False
+
+    clan_name = user['clan_name']
+    user['clan_name'] = 'Yo‘q'
+    user['clan_role'] = 'Azo'
+    user['clan_channel'] = 'Nomalum'
+    user['clan_group'] = 'Nomalum'
+    save_user(user)
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE clans SET members_count = members_count - 1 WHERE clan_name = ?", (clan_name,))
+    conn.commit()
+    conn.close()
+
+    return True
+
+def set_clan_join_type(clan_name: str, join_type: str):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE clans SET join_type = ? WHERE clan_name = ?", (join_type, clan_name))
+    conn.commit()
+    conn.close()
+
+def get_clan_join_type(clan_name: str) -> str:
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT join_type FROM clans WHERE clan_name = ?", (clan_name,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else "open"
+
+def add_join_request(clan_name: str, user_id: int, username: str, first_name: str):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("INSERT INTO join_requests (clan_name, user_id, username, first_name) VALUES (?, ?, ?, ?)",
+              (clan_name, user_id, username, first_name))
+    conn.commit()
+    conn.close()
+
+def get_pending_requests(clan_name: str):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT * FROM join_requests WHERE clan_name = ? ORDER BY created_at", (clan_name,))
+    rows = c.fetchall()
+    conn.close()
+    return [dict(zip([col[0] for col in c.description], row)) for row in rows]
+
+def approve_request(clan_name: str, user_id: int):
+    join_clan(user_id, clan_name)
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM join_requests WHERE clan_name = ? AND user_id = ?", (clan_name, user_id))
+    conn.commit()
+    conn.close()
+
+def reject_request(clan_name: str, user_id: int):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM join_requests WHERE clan_name = ? AND user_id = ?", (clan_name, user_id))
+    conn.commit()
+    conn.close()
+
+def transfer_leadership(clan_name: str, old_leader_id: int, new_leader_id: int):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE clans SET creator_id = ? WHERE clan_name = ?", (new_leader_id, clan_name))
+    c.execute("UPDATE users SET clan_role = 'Azo' WHERE user_id = ? AND clan_name = ?", (old_leader_id, clan_name))
+    c.execute("UPDATE users SET clan_role = 'Lider' WHERE user_id = ? AND clan_name = ?", (new_leader_id, clan_name))
+    conn.commit()
+    conn.close()
+
+def update_user_clan_role(user_id: int, new_role: str):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE users SET clan_role = ? WHERE user_id = ?", (new_role, user_id))
+    conn.commit()
+    conn.close()
+
+def kick_member(user_id: int):
+    leave_clan(user_id)
+
+def get_clan_members(clan_name: str):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE clan_name = ?", (clan_name,))
+    rows = c.fetchall()
+    conn.close()
+    return [dict(zip([col[0] for col in c.description], row)) for row in rows]

@@ -27,4 +27,4 @@ async def change_lang(callback: CallbackQuery):
 async def show_lang(callback: CallbackQuery):
     user = get_user(callback.from_user.id)
     lang = user.get("language", "uz")
-    await callback.message.answer(t(lang, "choose_lang"), reply_markup=lang_keyboard())
+    await callback.message.edit_text(t(lang, "choose_lang"), reply_markup=lang_keyboard())

@@ -74,57 +74,19 @@ async def handle_game_join(message: Message):
 
 @router.callback_query(F.data == "start")
 async def back_to_start(callback: CallbackQuery):
-    await callback.message.answer(
+    await callback.message.edit_text(
         "Botni guruhga qo'shish uchun quyidagi tugmani bosing:",
         reply_markup=main_menu()
     )
     await callback.answer()
 
-from aiogram.filters import Command
-# from .admin import show_admin_panel
-
-# @router.message(Command(commands=["admin"], ignore_case=True, ignore_mention=True))
-# async def cmd_admin(message: Message):
-#     await show_admin_panel(message)
-
-# from handlers.game import JOIN_TIME, broadcast, safe_delete, begin_game
-# import asyncio
-
-# @router.message(Command("game"))
-# async def start_game(message: Message):
-#     chat_id = message.chat.id
-#     bot = message.bot
-#     if chat_id in active_games and active_games[chat_id].running:
-#         return await message.answer("O'yin allaqachon boshlangan!")
-
-#     bot_info = await bot.get_me()
-#     join_url = f"https://t.me/{bot_info.username}?start=game_{chat_id}"
-
-#     kb = InlineKeyboardMarkup(inline_keyboard=[
-#         [InlineKeyboardButton(text="O'yinga qo'shilish", url=join_url)],
-#         [InlineKeyboardButton(text="Boshlash", callback_data="start_game_admin")]
-#     ])
-
-#     msg = await message.answer(
-#         f"<b>AJAL O'YINI</b>\n\n"
-#         f"Lobby {JOIN_TIME}s ochiq.\n\n"
-#         f"<i>Ishtirokchilar: 0</i>",
-#         reply_markup=kb, parse_mode="HTML"
-#     )
-
-#     gs = GameState(chat_id=chat_id, lobby_message_id=msg.message_id)
-#     active_games[chat_id] = gs
-
-#     await asyncio.sleep(JOIN_TIME)
-#     gs = active_games.get(chat_id)
-#     if not gs or gs.running or len(gs.players) < 5:
-#         await broadcast(bot, chat_id, "Kamida 5 kishi kerak.")
-#         await safe_delete(bot, chat_id, gs.lobby_message_id if gs else None)
-#         active_games.pop(chat_id, None)
-#         return
-
-#     await safe_delete(bot, chat_id, gs.lobby_message_id)
-#     await begin_game(gs, bot)
+@router.callback_query(F.data == "rasm_start")
+async def back_to_start(callback: CallbackQuery):
+    await callback.message.answer(
+        "Botni guruhga qo'shish uchun quyidagi tugmani bosing:",
+        reply_markup=main_menu()
+    )
+    await callback.answer()
 
 @router.message(CommandStart())
 async def start(message: Message):
