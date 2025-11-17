@@ -115,7 +115,7 @@ def migrate_db():
     conn.commit()
     conn.close()
 
-migrate_db()
+# migrate_db()
 
 def calculate_level(hp: int) -> int:
     # Dynamic level hisoblash (jadval bo'yicha)
