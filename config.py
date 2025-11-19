@@ -36,4 +36,4 @@ CARDS = [
     "🃏 ♦️ G'ishtin",
     "🃏 ♠️ Qirol Qarg'a"
 ]
-JOIN_TIME = 60  # seconds
+JOIN_TIME = 180  # seconds

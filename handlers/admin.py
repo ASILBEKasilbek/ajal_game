@@ -11,7 +11,16 @@ import sqlite3
 import asyncio
 from config import ADMIN_IDS, DB_FILE
 from datetime import datetime
-
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram import Bot
+from aiogram_calendar import SimpleCalendar, SimpleCalendarCallback
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+import math
+import json
 router = Router()
 
 # ==================== YORDAMCHI FUNKSIYALAR ====================
@@ -88,7 +97,7 @@ async def show_admin_panel(target):
         [IB(text="📊 Statistika", callback_data="admin_stats")],
         [IB(text="📢 Reklama", callback_data="admin_ads")],
         [IB(text="⚙️ Guruhlar boshqaruvi", callback_data="admin_group_management")],
-        # [IB(text="🔙 Chiqish", callback_data="admin_exit")]
+        [IB(text="1 vs 1",callback_data="manage_1vs1")]
     ])
 
     text = "🔐 <b>Admin Paneli</b>\n\nKerakli bo'limni tanlang:"
@@ -111,6 +120,246 @@ async def cb_admin(callback: CallbackQuery):
 async def admin_exit(callback: CallbackQuery):
     await callback.message.edit_text("✅ Admin panel yopildi.")
     await callback.answer()
+
+
+class Battle1v1State(StatesGroup):
+    date = State()
+    time = State()
+
+
+BATTLES_PER_PAGE = 5
+
+@router.callback_query(F.data.startswith("manage_1vs1"))
+async def admin_manage(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("🚫 Ruxsat yo'q!", show_alert=True)
+
+    page = int(callback.data.split(":")[1]) if ":" in callback.data else 1
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT id, scheduled_time, status FROM battle_1vs1 ORDER BY status='started' DESC, scheduled_time ASC")
+    battles = c.fetchall()
+    conn.close()
+
+    # Pagination
+    total_pages = math.ceil(len(battles) / BATTLES_PER_PAGE)
+    start_idx = (page - 1) * BATTLES_PER_PAGE
+    end_idx = start_idx + BATTLES_PER_PAGE
+    battles_page = battles[start_idx:end_idx]
+
+    keyboard = []
+
+    for battle_id, scheduled_time, status in battles_page:
+        time_str = datetime.strptime(scheduled_time, "%Y-%m-%d %H:%M").strftime("%d %B %Y, %H:%M")
+        status_emoji = "🟢" if status=="started" else "✅" if status=="finished" else "⏳"
+        keyboard.append([IB(text=f"{status_emoji} Battle {battle_id} | {time_str}", callback_data=f"admin_1vs1_detail:{battle_id}")])
+
+    # Paginate buttons
+    nav_buttons = []
+    if page > 1:
+        nav_buttons.append(IB(text="⬅️ Oldingi", callback_data=f"manage_1vs1:{page-1}"))
+    if page < total_pages:
+        nav_buttons.append(IB(text="Keyingi ➡️", callback_data=f"manage_1vs1:{page+1}"))
+
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
+    # Qo‘shimcha admin tugmalari
+    keyboard.append([IB(text="📅 Yangi 1vs1 battle yaratish", callback_data="admin_1vs1")])
+    keyboard.append([IB(text="🔙 Ortga", callback_data="admin")])
+
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+    await callback.message.edit_text(
+        "🎮 <b>1 vs 1 Battle boshqaruvi</b>\n\nBo'limni tanlang:",
+        reply_markup=reply_markup, parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("admin_1vs1_detail:"))
+async def battle_detail(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        return await callback.answer("🚫 Ruxsat yo'q!", show_alert=True)
+
+    battle_id = int(callback.data.split(":")[1])
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+
+    # Battle info
+    c.execute("SELECT scheduled_time, status, players FROM battle_1vs1 WHERE id=?", (battle_id,))
+    row = c.fetchone()
+    if not row:
+        await callback.answer("Battle topilmadi ❌", show_alert=True)
+        conn.close()
+        return
+
+    scheduled_time, status, players_json = row
+    players = json.loads(players_json)
+    time_str = datetime.strptime(scheduled_time, "%Y-%m-%d %H:%M").strftime("%d %B %Y, %H:%M")
+    
+    # Pairs va ovozlar
+    c.execute("SELECT player1, player2, votes1, votes2 FROM battle_pairs WHERE battle_id=?", (battle_id,))
+    pairs = c.fetchall()
+    conn.close()
+    votes_dict = {}
+
+    for p1, p2, v1, v2 in pairs:
+        votes_dict[p1] = votes_dict.get(p1, 0) + v1
+        if p2 != "bot":
+            votes_dict[p2] = votes_dict.get(p2, 0) + v2
+
+    top5_users = sorted(votes_dict.items(), key=lambda x: x[1], reverse=True)[:5]
+    top5_ids = [user_id for user_id, _ in top5_users]
+
+    text = f"<b>🎮 Battle {battle_id}</b>\n"
+    text += f"⏱ Scheduled: {time_str}\n"
+    text += f"📌 Status: {status}\n"
+    text += f"👥 Qatnashchilar: {', '.join(str(p) for p in players)}\n\n"
+    text += "<b>Top 5 eng ko'p ovoz olganlar:</b>\n"
+
+    from database.battle_models import get_name_battle
+
+    for p1, p2, v1, v2 in pairs:
+        if (p1 in top5_ids) or (p2 in top5_ids):
+            name1 = "Bot" if p1=="bot" else get_name_battle(p1)
+            name2 = "Bot" if p2=="bot" else get_name_battle(p2)
+            text += f"{name1}({v1})  🆚 {name2}({v2}) ovoz\n"
+
+    # Admin action buttons
+    # kb = InlineKeyboardMarkup(inline_keyboard=[
+    #     [IB(text="✅ Start", callback_data=f"admin_1vs1_start:{battle_id}")],
+    #     [IB(text="⏹ Finish", callback_data=f"admin_1vs1_finish:{battle_id}")],
+    #     [IB(text="✏️ Edit", callback_data=f"admin_1vs1_edit:{battle_id}")],
+    #     [IB(text="🗑 Delete", callback_data=f"admin_1vs1_delete:{battle_id}")],
+    #     [IB(text="🔙 Ortga", callback_data="manage_1vs1")]
+    # ])
+
+    await callback.message.edit_text(text, parse_mode="HTML")
+    await callback.answer()
+
+# --- BATTLE BOSHLASH ---
+@router.callback_query(F.data == "admin_1vs1")
+async def admin_1vs1_start(call: CallbackQuery, state: FSMContext):
+
+    await state.set_state(Battle1v1State.date)
+
+    calendar = await SimpleCalendar().start_calendar()
+    await call.message.edit_text("📅 1vs1 sanasini tanlang:", reply_markup=calendar)
+
+# --- SANA TANLANGANDA ---
+@router.callback_query(SimpleCalendarCallback.filter(), Battle1v1State.date)
+async def date_chosen(call: CallbackQuery, callback_data: SimpleCalendarCallback, state: FSMContext):
+    selected, date = await SimpleCalendar().process_selection(call, callback_data)
+
+    if selected:
+        await state.update_data(date=date)
+        kb = InlineKeyboardBuilder()
+        for h in range(0, 24):
+            kb.button(text=f"{h:02d}:00", callback_data=f"hour:{h}")
+        kb.adjust(4)
+        await call.message.answer(f"📌 Sana: {date.strftime('%Y-%m-%d')}\n⏰ Endi soatni tanlang:", reply_markup=kb.as_markup())
+        await state.set_state(Battle1v1State.time)
+
+
+# --- SOAT TANLANGANDA ---
+@router.callback_query(Battle1v1State.time, F.data.startswith("hour:"))
+async def hour_selected(call: CallbackQuery, state: FSMContext):
+
+    hour = int(call.data.split(":")[1])
+    data = await state.get_data()
+    date = data["date"]
+    final = date.replace(hour=hour, minute=0)
+    final_text = final.strftime("%Y-%m-%d %H:%M")
+
+    await state.update_data(final_time=final_text)
+
+    kb = InlineKeyboardBuilder()
+    kb.button(text="✅ Ha, tasdiqlayman", callback_data="confirm_1vs1")
+    kb.button(text="❌ Yo‘q, bekor qilish", callback_data="cancel_1vs1")
+    kb.adjust(1)
+
+    await call.message.edit_text(
+        f"📌 Tanlangan vaqt:\n<b>{final_text}</b>\n\nTasdiqlaysizmi?",
+        reply_markup=kb.as_markup()
+    )
+@router.callback_query(F.data == "confirm_1vs1")
+async def confirm_battle(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    final_time = data["final_time"]
+
+    # DBga battle yaratamiz
+    import sqlite3, json
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("INSERT INTO battle_1vs1 (scheduled_time, players) VALUES (?, ?)",
+              (final_time, json.dumps([])))
+    conn.commit()
+    conn.close()
+
+    await call.message.answer(
+        f"🔥 1 vs 1 battle tasdiqlandi!\n⏰ Vaqt: <b>{final_time}</b>\n\n"
+        "Endi foydalanuvchilarga yuboraymi?"
+    )
+
+    # Hamma userlarga yuboriladi — lekin admin tasdiqlasin
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📢 Hamma userlarga yubor", callback_data="send_to_all_1vs1")
+    kb.button(text="❌ Bekor qilish", callback_data="cancel_1vs1")
+    kb.adjust(1)
+
+    await call.message.answer("Davom etamizmi?", reply_markup=kb.as_markup())
+    await state.clear()
+
+
+@router.callback_query(F.data == "send_to_all_1vs1")
+async def send_to_all(call: CallbackQuery, bot: Bot):
+    import sqlite3
+
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+
+    # Oxirgi battle-id
+    c.execute("SELECT id, scheduled_time FROM battle_1vs1 ORDER BY id DESC LIMIT 1")
+    battle_id, final_time = c.fetchone()
+    conn.close()
+
+    # Hamma userlar
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    users = c.execute("SELECT user_id FROM users").fetchall()
+    conn.close()
+
+    total = len(users)       # jami
+    sent = 0                 # yuborilganlar
+    failed = 0               # yuborilmaganlar
+
+    for (user_id,) in users:
+        kb = InlineKeyboardBuilder()
+        kb.button(text="🏆 Ha, qatnashaman", callback_data=f"join_1vs1:{battle_id}")
+        kb.button(text="❌ Yo‘q", callback_data="nojoin_1vs1")
+        kb.adjust(1)
+
+        try:
+            await bot.send_message(
+                user_id,
+                f"🔥 1vs1 BATTLE e'lon qilindi!\n\n⏰ Vaqt: <b>{final_time}</b>\n"
+                "Qatnashasizmi?",
+                reply_markup=kb.as_markup()
+            )
+            sent += 1
+        except:
+            failed += 1
+            continue
+
+    # Admin uchun hisobot
+    await call.message.answer(
+        f"📢 Xabar yuborish yakunlandi.\n\n"
+        f"👥 Jami foydalanuvchilar: <b>{total}</b>\n"
+        f"📨 Yuborildi: <b>{sent}</b>\n"
+        f"❌ Yuborilmadi: <b>{failed}</b>"
+    )
 
 # ==================== GURUHLAR & KANALLAR BOSHQARUVI ====================
 

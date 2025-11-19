@@ -6,23 +6,12 @@ router = Router()
 
 @router.callback_query(F.data == "guruhlar")
 async def back_to_start(callback: CallbackQuery):
-    # guruhlar = get_guruhlar()   # ["https://t.me/Ajal_oyini_chat"]
     guruhlar = [
-    ("Ajal o‘yini chat", "https://t.me/Ajal_oyini_chat")
+    ("Ajal o'yini chat", "https://t.me/Ajal_oyini_chat")
 ]
-
-
     buttons = []
-    bot = callback.bot   # Bot obyektini olish
-
+    bot = callback.bot 
     for guruh in guruhlar:
-        # link = guruh.strip()
-
-        # # linkdan username olish
-        # username = link.replace("https://t.me/", "").replace("@", "").strip()
-
-        # # Telegramdan guruh nomini olish
-        # chat = await bot.get_chat(username)
         name = guruh[0]
         link = guruh[1]
 
@@ -36,7 +25,7 @@ async def back_to_start(callback: CallbackQuery):
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
-    await callback.message.answer(
+    await callback.message.edit_text(
         "📜 Tasdiqlangan guruhlar:",
         reply_markup=keyboard
     )

@@ -35,4 +35,11 @@ def main_menu() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=" 🏰 Clan", callback_data="asosiy_clan")
         ]
     ]
+    # if False: 
+    buttons.append([
+            InlineKeyboardButton(text=" Battle", callback_data="asosiy_battle")
+        ])
+
+
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)

@@ -98,12 +98,42 @@ def init_db():
         );
     """)
     c.execute("""
-              CREATE TABLE IF NOT EXISTS guruhlar(
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    group_id INTEGER,
-                    group_name TEXT
-                );
-    """)
+        CREATE TABLE IF NOT EXISTS guruhlar(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER,
+            group_name TEXT
+        );""")
+    
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS battle_1vs1 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scheduled_time TEXT,
+            status TEXT DEFAULT 'pending',      -- pending / started / finished
+            players TEXT DEFAULT '[]',          -- JSON list -> [...user_id...]
+            created_at TEXT DEFAULT (datetime('now'))
+        );""")
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS battle_pairs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            battle_id INTEGER,
+            player1 INTEGER,
+            player2 INTEGER,
+            votes1 INTEGER DEFAULT 0,
+            votes2 INTEGER DEFAULT 0,
+            winner INTEGER DEFAULT NULL
+        );""")
+    
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            battle_id INTEGER,
+            pair_id INTEGER,
+            voter_id INTEGER,
+            for_player INTEGER,
+            amount INTEGER
+        );""")
+            
     
 
         

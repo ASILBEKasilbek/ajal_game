@@ -116,6 +116,9 @@ async def receive_payment_screenshot(message: Message):
     user = get_user(message.from_user.id)
     if not user:
         return
+    if message.from_user.id not in user_selected_package:
+        return  # hech nima qilmaydi, boshqa handlerlar ishlaydi
+    
 
     info = user_selected_package.get(message.from_user.id)
     if not info:

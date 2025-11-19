@@ -375,8 +375,8 @@ async def leave_clan_handler(callback: CallbackQuery):
 async def start_create_clan(callback: CallbackQuery, state: FSMContext):
     lang = get_user_lang(callback)
     user = get_user(callback.from_user.id)
-    if user["olmos"] < 1:
-        await callback.answer(f"{EMOJI['cross']} 1 {t(lang, 'clan_create').split('(')[1][:-1]} {t(lang, 'back')}", show_alert=True)
+    if user["olmos"] < 100:
+        await callback.answer(f"{EMOJI['cross']} 100 {t(lang, 'clan_create').split('(')[1][:-1]} {t(lang, 'back')}", show_alert=True)
         return
     await callback.message.answer(f"{EMOJI['clan']} {t(lang, 'clan_create_name')}")
     await state.set_state(ClanCreateState.waiting_name)
@@ -427,7 +427,7 @@ async def receive_clan_channel(message: Message, state: FSMContext):
     clan_group_url = normalize_link(data["clan_group"])
 
     if create_clan(data["clan_name"], message.from_user.id, data["clan_description"], data["clan_group"], channel):
-        remove_olmos(message.from_user.id, 1)
+        remove_olmos(message.from_user.id, 100)
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute("UPDATE users SET clan_name = ?, clan_role = 'Lider' WHERE user_id = ?", (data["clan_name"], message.from_user.id))
@@ -442,7 +442,7 @@ async def receive_clan_channel(message: Message, state: FSMContext):
         await message.answer(
             f"*{EMOJI['check']} {t(lang, 'clan_created')}* `{data['clan_name']}`\n\n"
             f"{EMOJI['leader']} {t(lang, 'clan_leader')}: {message.from_user.first_name}\n"
-            f"1 olmos olindi",
+            f"100 olmos olindi",
             reply_markup=keyboard,
             parse_mode="Markdown"
         )

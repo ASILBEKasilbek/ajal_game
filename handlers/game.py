@@ -96,6 +96,74 @@ class GameState:
     game_winners: list = field(default_factory=list)
     group_invite_link: str = ""
 
+@router.callback_query(F.data=="rank_level_info")
+async def rank_level_info(callback: CallbackQuery):
+    """
+    Foydalanuvchining level va rank holatini chiroyli ko'rsatish funksiyasi.
+    """
+    user = get_user(callback.from_user.id)
+    if not user:
+        await callback.message.answer("❌ Foydalanuvchi topilmadi.")
+        await callback.answer()
+        return
+
+    # Foydalanuvchining tilini aniqlash
+    lang = user.get("language", "uz")
+
+    # Hozirgi HP va Rank
+    current_hp = user.get("hp", 0)
+    current_rank = user.get("current_rank", "ACE")
+
+    # Levelni hisoblash
+    def calculate_level(hp: int) -> int:
+        level = 1
+        cumulative = 0
+        for hp_required, cum_hp in LEVEL_PROGRESSION:
+            if hp >= cum_hp:
+                level += 1
+            else:
+                break
+        return level
+
+    user_level = calculate_level(current_hp)
+
+    # Keyingi rank va zarur HP
+    next_rank_info = None
+    for i, rank in enumerate(RANKS):
+        if rank["name"] == current_rank:
+            if i + 1 < len(RANKS):
+                next_rank_info = RANKS[i + 1]
+            break
+
+    # Rank up uchun xabar
+    rank_message = RANK_UP_MESSAGES.get(current_rank, "")
+
+    # Keyingi rank va qolgan HPni aniqlash
+    if next_rank_info:
+        hp_needed = next_rank_info["min_hp"] - current_hp
+        next_rank_text = f"\n⏳ Keyingi rank: <b>{next_rank_info['name']}</b> ({hp_needed} HP kerak)"
+    else:
+        next_rank_text = "\n🏆 Siz eng yuqori rankdasiz!"
+
+    # Chiroyli xabar
+    text = f"""
+🏅 <b>Rank va Level haqida ma'lumot</b> 🏅
+
+👤 Foydalanuvchi: <b>{user.get('username','Foydalanuvchi')}</b>
+💖 Hozirgi HP: <b>{current_hp}</b>
+🎯 Hozirgi Level: <b>{user_level}</b>
+🔥 Hozirgi Rank: <b>{current_rank}</b>
+{next_rank_text}
+
+📜 Rank haqida izoh:
+{rank_message}
+    """
+
+    await callback.message.answer(text, parse_mode="HTML")
+    await callback.answer()
+
+
+
 # ────────────────────── YORDAMCHILAR ──────────────────────
 def migrate_db():
     import sqlite3
