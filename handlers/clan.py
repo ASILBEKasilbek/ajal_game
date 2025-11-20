@@ -92,6 +92,7 @@ async def clan_menu(callback: CallbackQuery):
         keyboard.append([InlineKeyboardButton(text=f"{EMOJI['clan']} {t(lang, 'clan_my_clan')}", callback_data=f"clan:show:{user['clan_name']}")])
     
     keyboard += [
+        [InlineKeyboardButton(text="Qidiruv", switch_inline_query_current_chat="clan:")],
         [InlineKeyboardButton(text=f"📋 {t(lang, 'clan_all_clans')}", callback_data="clan:all")],
         [InlineKeyboardButton(text=f"{EMOJI['create']} {t(lang, 'clan_create')}", callback_data="create_clan")],
         [InlineKeyboardButton(text=f"{EMOJI['back']} {t(lang, 'main_menu')}", callback_data="start")]
@@ -119,7 +120,7 @@ async def show_all_clans(callback: CallbackQuery):
         )
         return
 
-    clans = clans[:8]
+    clans = clans[:5]
     keyboard = []
     for clan in clans:
         join_emoji = EMOJI['request'] if get_clan_join_type(clan['clan_name']) == "request" else EMOJI['open']
@@ -165,9 +166,19 @@ async def show_specific_clan(callback: CallbackQuery):
         f"💬 {t(lang, 'clan_group')}: {clan['clan_group'] or '_Not set_'}\n"
         f"📢 {t(lang, 'clan_channel')}: {clan['clan_channel'] or '_Not set_'}"
     )
-
+    print(text)
+    # await callback.answer("nima buu ")
+    user_id = callback.from_user.id
     keyboard = get_clan_keyboard(clan_name, callback.from_user.id, lang, is_leader, is_co)
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown", disable_web_page_preview=True)
+    print(keyboard)
+    if not callback.message:
+        print(1)
+        from aiogram import Bot
+        bot: Bot = callback.bot
+        await bot.send_message(chat_id=user_id,reply_markup=keyboard, text=text, parse_mode="Markdown")
+    else:
+        print(2)
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown", disable_web_page_preview=True)
     await callback.answer()
 
 # --- QO‘SHILISH ---
@@ -376,7 +387,7 @@ async def start_create_clan(callback: CallbackQuery, state: FSMContext):
     lang = get_user_lang(callback)
     user = get_user(callback.from_user.id)
     if user["olmos"] < 100:
-        await callback.answer(f"{EMOJI['cross']} 100 {t(lang, 'clan_create').split('(')[1][:-1]} {t(lang, 'back')}", show_alert=True)
+        await callback.answer(f"{EMOJI['cross']} {t(lang, 'clan_create')} ", show_alert=True)
         return
     await callback.message.answer(f"{EMOJI['clan']} {t(lang, 'clan_create_name')}")
     await state.set_state(ClanCreateState.waiting_name)

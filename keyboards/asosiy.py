@@ -18,7 +18,7 @@ def main_menu() -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton(
-                text="🤖 Botni guruhga qo'shish",
+                text="➕ Botni guruhga qo'shish",
                 url=f"https://t.me/{a3}?startgroup=true"
             )
         ],
@@ -37,7 +37,7 @@ def main_menu() -> InlineKeyboardMarkup:
     ]
     # if False: 
     buttons.append([
-            InlineKeyboardButton(text=" Battle", callback_data="asosiy_battle")
+            InlineKeyboardButton(text="🏆 Battle", callback_data="asosiy_battle")
         ])
 
 

@@ -100,8 +100,8 @@ def init_db():
     c.execute("""
         CREATE TABLE IF NOT EXISTS guruhlar(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            group_id INTEGER,
-            group_name TEXT
+            group_name TEXT NOT NULL,
+            group_link TEXT NOT NULL
         );""")
     
     c.execute("""
@@ -150,6 +150,54 @@ def get_user(user_id: int) -> Optional[Dict[str, Any]]:
     conn.close()
     return dict(row) if row else None
 
+
+def get_all_guruhlar():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM guruhlar ORDER BY id")
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def add_guruh(group_name: str, group_link: str):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("INSERT INTO guruhlar (group_name, group_link) VALUES (?, ?)", (group_name, group_link))
+    conn.commit()
+    conn.close()
+
+def delete_guruh(group_name: str):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM guruhlar WHERE group_name=?", (group_name,))
+    conn.commit()
+    conn.close()
+
+def get_all_tulov_kanallar():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM tulov_kanallar ORDER BY id")
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def add_tulov_kanal(kanal_id: int):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT * FROM tulov_kanallar WHERE kanal_id=?", (kanal_id,))
+    if not c.fetchone():
+        c.execute("INSERT INTO tulov_kanallar (kanal_id) VALUES (?)", (kanal_id,))
+    conn.commit()
+    conn.close()
+
+def delete_tulov_kanal(kanal_id: int):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM tulov_kanallar WHERE kanal_id=?", (kanal_id,))
+    conn.commit()
+    conn.close()
 
 def update_user_field(user_id: int, field: str, value):
     # SQL Injection prevention

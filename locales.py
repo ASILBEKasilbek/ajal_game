@@ -3,7 +3,10 @@ import json
 
 LOCALES = {
     "uz": {
-        "welcome": "Botni guruhga qo'shish uchun quyidagi tugmani bosing!\n",
+        "welcome": """🎮  Ajal O'yini — Asosiy menyu
+
+Quyidagi bo'limlardan birini tanlab, o'yinni davom ettiring.
+Har bir bo'lim sizning kuchingiz, darajangiz va imkoniyatlaringizni oshiradi.\n""",
         "choose_lang": "Tilni tanlang:",
         "game_start": "O'yin boshlanmoqda...",
         "language_changed": "✅ Til o'zgartirildi!",
@@ -28,7 +31,7 @@ LOCALES = {
         "clan_menu_title": "Klanlar bo‘limi",
         "clan_my_clan": "Mening klanim",
         "clan_all_clans": "Barcha klanlar",
-        "clan_create": "Klan yaratish (1 olmos)",
+        "clan_create": "Klan yaratish (100 olmos)",
         "clan_no_clans": "Hozircha klan yo‘q.",
         "clan_create_first": "Birinchilardan bo‘lib yarating!",
         "clan_info_title": """Klan: {name}""",
@@ -95,7 +98,10 @@ Masalan: @MyClanNews yoki https://t.me/MyClanNews""",
         
 },
     "ru": {
-        "welcome": "Bот для добавления в группу, нажмите кнопку ниже!\n",
+        "welcome": """🎮  Ajal O'yini — Asosiy menyu
+
+Quyidagi bo'limlardan birini tanlab, o'yinni davom ettiring.
+Har bir bo'lim sizning kuchingiz, darajangiz va imkoniyatlaringizni oshiradi.\n""",
         "choose_lang": "Выберите язык:",
         "game_start": "Игра начинается...",
         "language_changed": "✅ Язык изменен!",

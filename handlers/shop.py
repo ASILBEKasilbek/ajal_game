@@ -8,12 +8,9 @@ from config import ADMIN_GROUP_ID,PACKAGES
 router = Router()
 
 
-
-# Foydalanuvchi tanlagan paketni vaqtincha saqlaymiz
 user_selected_package = {}
 
 
-# 📦 Do'konni ko'rsatish
 @router.callback_query(F.data.startswith("shop:diamonds"))
 async def show_diamonds_shop(callback: CallbackQuery):
     lang = get_user(callback.from_user.id).get("language", "uz")
@@ -117,8 +114,7 @@ async def receive_payment_screenshot(message: Message):
     if not user:
         return
     if message.from_user.id not in user_selected_package:
-        return  # hech nima qilmaydi, boshqa handlerlar ishlaydi
-    
+        return  
 
     info = user_selected_package.get(message.from_user.id)
     if not info:

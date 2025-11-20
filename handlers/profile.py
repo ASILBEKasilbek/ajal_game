@@ -156,7 +156,7 @@ async def show_profile(callback: CallbackQuery):
     try:
         photo = FSInputFile("ajal_image.jpg")
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="Qidiruv", switch_inline_query_current_chat="")],
+            [InlineKeyboardButton(text="Qidiruv", switch_inline_query_current_chat="user:")],
             [InlineKeyboardButton(text="Rank va Level haqida" , callback_data="rank_level_info")],
             [InlineKeyboardButton(text="✏️ Profilni tahrirlash", callback_data="profile_edit")],
             [InlineKeyboardButton(text="🔙 Ortga", callback_data="rasm_start")]
@@ -258,31 +258,79 @@ async def save_profile_edit(message: Message, state: FSMContext):
     finally:
         await state.clear()
 
+# @router.inline_query()
+# async def inline_search(inline_query: InlineQuery):
+#     query = inline_query.query.strip().lower()
+#     if not query:
+#         await inline_query.answer([], cache_time=1)
+#         return
+
+#     users = search_users(query)
+
+#     results = []
+
+#     for idx, u in enumerate(users):
+#         full_name = f"{u['first_name']} {u.get('last_name', '')}".strip()
+#         username = u.get("username") or "username yo‘q"
+#         lang=u.get("language", "uz")
+
+#         results.append(
+#             InlineQueryResultArticle(
+#                 id=str(idx),
+#                 title=f"{full_name} ({username})",
+#                 description=f"Rank: {u['rank']} | Level: {u['level']}",
+#                 input_message_content=InputTextMessageContent(
+#                     message_text=format_user_profile(u, lang)
+#                 )
+#             )
+#         )
+
+#     await inline_query.answer(results, cache_time=1)
+
+
+from database.db import all_clans, get_clan_join_type
+
 @router.inline_query()
 async def inline_search(inline_query: InlineQuery):
     query = inline_query.query.strip().lower()
-    if not query:
-        await inline_query.answer([], cache_time=1)
-        return
-
-    users = search_users(query)
-
     results = []
 
-    for idx, u in enumerate(users):
-        full_name = f"{u['first_name']} {u.get('last_name', '')}".strip()
-        username = u.get("username") or "username yo‘q"
-        lang=u.get("language", "uz")
-
-        results.append(
-            InlineQueryResultArticle(
-                id=str(idx),
-                title=f"{full_name} ({username})",
-                description=f"Rank: {u['rank']} | Level: {u['level']}",
-                input_message_content=InputTextMessageContent(
-                    message_text=format_user_profile(u, lang)
+    if query.startswith("clan:"):
+        search_text = query[5:].strip()  # "clan:" prefiksini olib tashlaymiz
+        clans = all_clans()
+        filtered = [c for c in clans if search_text in c["clan_name"].lower()]
+        for idx, clan in enumerate(filtered):
+            results.append(
+                InlineQueryResultArticle(
+                    id=str(idx),
+                    title=f"{clan['clan_name']} (LVL {clan['clan_level']})",
+                    description=f"👥 {clan['members_count']}/10 | Kirish: {'Ariza' if get_clan_join_type(clan['clan_name'])=='request' else 'Ochiq'}",
+                    input_message_content=InputTextMessageContent(
+                        message_text=f"🔍 {clan['clan_name']} haqida ma'lumot",
+                    ),
+                    reply_markup=InlineKeyboardMarkup(
+                        inline_keyboard=[
+                            [InlineKeyboardButton(text="Clanni ko‘rish", callback_data=f"clan:show:{clan['clan_name']}")]
+                        ]
+                    )
                 )
             )
-        )
+    elif query.startswith("user:"):
+        search_text = query[5:].strip()  # "user:" prefiksini olib tashlaymiz
+        users = search_users(search_text)
+        for idx, u in enumerate(users):
+            full_name = f"{u['first_name']} {u.get('last_name','')}".strip()
+            username = u.get("username") or "username yo‘q"
+            lang = u.get("language","uz")
+            results.append(
+                InlineQueryResultArticle(
+                    id=str(idx),
+                    title=f"{full_name} ({username})",
+                    description=f"Rank: {u['rank']} | Level: {u['level']}",
+                    input_message_content=InputTextMessageContent(
+                        message_text=format_user_profile(u, lang)
+                    )
+                )
+            )
 
     await inline_query.answer(results, cache_time=1)

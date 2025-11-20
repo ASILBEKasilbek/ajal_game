@@ -1,22 +1,17 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
-from database.user_models import get_guruhlar
+from database.db import get_all_guruhlar  # database.py dagi funksiya
 
 router = Router()
 
 @router.callback_query(F.data == "guruhlar")
 async def back_to_start(callback: CallbackQuery):
-    guruhlar = [
-    ("Ajal o'yini chat", "https://t.me/Ajal_oyini_chat")
-]
-    buttons = []
-    bot = callback.bot 
-    for guruh in guruhlar:
-        name = guruh[0]
-        link = guruh[1]
+    guruhlar = get_all_guruhlar()
 
+    buttons = []
+    for guruh in guruhlar:
         buttons.append([
-            InlineKeyboardButton(text=name, url=link)
+            InlineKeyboardButton(text=guruh['group_name'], url=guruh.get('group_link', '#'))
         ])
 
     buttons.append([

@@ -75,6 +75,7 @@ class Player:
     can_save: bool = False
     card: Optional[str] = None
     chosen_card: Optional[str] = None
+
 @dataclass
 class GameState:
     chat_id: int
@@ -98,9 +99,6 @@ class GameState:
 
 @router.callback_query(F.data=="rank_level_info")
 async def rank_level_info(callback: CallbackQuery):
-    """
-    Foydalanuvchining level va rank holatini chiroyli ko'rsatish funksiyasi.
-    """
     user = get_user(callback.from_user.id)
     if not user:
         await callback.message.answer("❌ Foydalanuvchi topilmadi.")
@@ -170,7 +168,6 @@ def migrate_db():
     from database.db import DB_FILE
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    # Yangi ustunlar qo'shish (agar yo'q bo'lsa)
     c.execute("PRAGMA table_info(users)")
     columns = [col[1] for col in c.fetchall()]
     if 'hp' not in columns:
@@ -187,7 +184,6 @@ def migrate_db():
 migrate_db()
 
 def calculate_level(hp: int) -> int:
-    # Dynamic level hisoblash (jadval bo'yicha)
     cumulative = 0
     level = 1
     req = 20
@@ -229,6 +225,7 @@ def update_rank_and_level(user: dict, old_hp: int):
         return "⚠️ ZAVA rankidan tushdingiz! HP 10,000 dan pastga tushdi."
 
     return None
+
 async def safe_delete(bot, chat_id: int, message_id: Optional[int]):
     if message_id:
         try:
@@ -257,33 +254,76 @@ def assign_cards(gs: GameState):
 
 def get_role_description(role: str) -> str:
     d = {
-        "Najiro": "Har kecha bir kishini o'ldiradi.",
-        "Orochimaru": "Najiro sherigi.",
-        "Qutqaruvchi": "1 marta kimnidir qutqaradi.",
-        "Obito": "Ovozi 2 barobar.",
-        "Madara": "Har 2 raundda zaharlaydi.",
-        "Tinch o'yinchi": "Oddiy o'yinchi."
+        "Najiro": """Najiro — o‘yinning asosiy dushmani va markaziy qahramoni.
+🌙 Har kechada Najiro bitta o‘yinchini o‘ldiradi.
+Uning maqsadi — barcha o‘yinchilarni yo‘q qilish va oxirigacha tirik qolish.
+
+⚠️ Agar Najiro o‘ldirilsa, odatda o‘yin tugaydi, lekin Orochimaru tirik bo‘lsa, o‘yin davom etadi.
+Najiro va Orochimaru ikkalasi o‘lgandagina o‘yin tugaydi.
+
+Najiro o‘yinda eng kuchli va xavfli kuch. U yashirincha harakat qilib, o‘yin taqdirini o‘zgartiradi.""",
+        "Orochimaru": """
+Orochimaru — Najironing sodiq sherigi.
+Agar Najiro o‘ldirilsa, o‘yin darhol tugamaydi, chunki Orochimaru tirik bo‘lsa, o‘yin davom etadi.
+Shu sababli, o‘yinni yakunlash uchun Najiro va Orochimaru ikkisi ham o‘lishi kerak.
+
+🕰 Orochimaru odam o‘ldira olmaydi, u o‘yinni uzaytirish va Najironi himoya qilish uchun xizmat qiladi.
+U yashirincha ma’lumot to‘playdi, odamlarni chalg‘itadi va Najironing harakatlarini qo‘llab-quvvatlaydi.""",
+        "Qutqaruvchi": """Qutqaruvchi — o‘yindagi yagona najotkor.
+🌙 O‘yin davomida faqat bitta marta istalgan o‘yinchini o‘limdan saqlab qolishi mumkin.
+Uning vazifasi — Najiro yoki tinch o‘yinchilarni himoya qilish va o‘yinni davom ettirish.
+
+⚕️ Qutqaruvchi o‘zini ham bir marta davolay oladi, ammo undan keyin bu kuchni yo‘qotadi.""",
+        "Obito": """Obito — o‘ziga xos kuchga ega o‘yinchi.
+🗳 Ovoz berish (dorga osish) jarayonida uning ovozi ikki o‘yinchining ovoziga teng.
+Ya’ni, Obito kimga ovoz bersa, o‘sha nomzodga 2 ta ovoz yoziladi.
+
+Uning maqsadi — o‘z tomonining g‘alabasini ta’minlash uchun strategik ovoz berish orqali o‘yinni boshqarish.
+Obitoning ovozi hal qiluvchi kuchga ega, shuning uchun u jim bo‘lsa ham o‘yinda katta rol o‘ynaydi.""",
+        "Madara": """Madara — zahar kuchiga ega yovuz strateg.
+🌙 Har kechada Madara bitta o‘yinchini zaharlaydi.
+
+💀 Zaharlangan o‘yinchiga maxfiy xabar boradi:
+“Siz zaharlandingiz.”
+
+Ammo kim uni zaharlaganini hech kim bilmaydi.
+Agar hamma o‘yinchilar zaharlansa, o‘yin Madaraning g‘alabasi bilan tugaydi.
+
+⚠️ Madara Najironi ham zaharlashi mumkin — uning zahri hammaga o‘tadi va vaqt o‘tishi bilan butun o‘yinni yo‘q qiladi.
+U o‘yin davomida sekin, ammo muqarrar tarzda halokat tarqatadi.""",
+        "Tinch o'yinchi": """Tinch o'yinchi — o‘yinning asosiy ishtirokchisi.
+Ularning maqsadi — Najiro va uning yordamchilarini topib, o‘ldirish va o‘yinni tinch yo‘l bilan yakunlash.
+Tinch o‘yinchilar bir-birlari bilan hamkorlik qilib, Najiro va uning jamoasini aniqlashlari va yo‘q qilishlari kerak.""",   
     }
     return d.get(role, "Tinch o'yinchi")
 
 # ────────────────────── LOBBY ──────────────────────
+
+
 @router.message(Command("game"))
 async def start_game(message: Message):
-    # print(vars(message))
-    # for i in message:
-    #     print(i)
     chat_id = message.chat.id
     bot = message.bot
-    if chat_id in active_games and active_games[chat_id].running:
-        return await message.answer("O'yin allaqachon boshlangan!")
+    if message.chat.type not in ["group", "supergroup"]:
+        return await message.answer("❌ Bu buyruq faqat guruhlarda ishlaydi.")
 
+    if chat_id in active_games:
+        gs = active_games[chat_id]
+        try:
+            await bot.delete_message(chat_id, message.message_id)
+            await message.answer("⚠️ Lobby allaqachon mavjud.")
+        except:
+            pass
+
+        return  
+    
     bot_info = await bot.get_me()
     join_url = f"https://t.me/{bot_info.username}?start=game_{chat_id}"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="O'yinga qo'shilish", url=join_url)],
-        [InlineKeyboardButton(text="Boshlash", callback_data="start_game_admin")]
+        [InlineKeyboardButton(text="O'yinga qo'shilish", url=join_url)]
     ])
+
     msg = await message.answer(
         f"<b>AJAL O'YINI</b>\n\n"
         f"Lobby {JOIN_TIME}s ochiq.\n\n"
@@ -291,14 +331,22 @@ async def start_game(message: Message):
         reply_markup=kb, parse_mode="HTML"
     )
 
-    # gs = GameState(chat_id=chat_id, lobby_message_id=msg.message_id)
-    # active_games[chat_id] = gs
-    username=message.chat.username
-    gs = GameState(chat_id=chat_id, lobby_message_id=msg.message_id, group_invite_link=f"https://t.me/{username}")
+    try:
+        await bot.pin_chat_message(chat_id, msg.message_id, disable_notification=True)
+    except:
+        pass
+
+    username = message.chat.username or ""
+    gs = GameState( 
+        chat_id=chat_id,
+        lobby_message_id=msg.message_id,
+        group_invite_link=f"https://t.me/{username}"
+    )
     active_games[chat_id] = gs
 
     await asyncio.sleep(JOIN_TIME)
     gs = active_games.get(chat_id)
+
     if not gs or gs.running or len(gs.players) < 5:
         await broadcast(bot, chat_id, "Kamida 5 kishi kerak.")
         await safe_delete(bot, chat_id, gs.lobby_message_id if gs else None)
@@ -316,6 +364,18 @@ async def start_game_admin(callback: CallbackQuery):
     await callback.answer("O'yin boshlanmoqda...")
     await safe_delete(callback.bot, callback.message.chat.id, gs.lobby_message_id)
     await begin_game(gs, callback.bot)
+    
+
+@router.message(Command("play"))
+async def start_game_play(message: Message):
+    gs = active_games.get(message.chat.id)
+    
+    if not gs or gs.running or len(gs.players) < 5:
+        return await message.answer("Kamida 5 kishi kerak!", show_alert=False)
+    
+    await message.answer("O'yin boshlanmoqda...")
+    await safe_delete(message.bot, message.chat.id, gs.lobby_message_id)
+    await begin_game(gs, message.bot)
 
 # ────────────────────── O'YIN BOSHLANISHI ──────────────────────
 async def begin_game(gs: GameState, bot):
@@ -362,12 +422,14 @@ async def begin_game(gs: GameState, bot):
 # ────────────────────── HAR BIR PLAYERGA QOLGANLARNING KARTASI ──────────────────────
 async def send_other_players_cards(gs: GameState, bot):
     for user_id, player in gs.players.items():
+        print(gs)
         others = [p for p in gs.players.values() if p.user_id != user_id]
 
         text = "🃏 <b>Boshqa o'yinchilar kartalari:</b>\n\n"
+        print(others)
 
         for o in others:
-            text += f"• <b>{o.name}</b> — {o.card}\n"
+            text += f"<b>{o.name}</b> — {o.card}\n"
 
         await bot.send_message(user_id, text, parse_mode="HTML")
 
@@ -375,8 +437,6 @@ async def send_other_players_cards(gs: GameState, bot):
 async def card_phase(gs: GameState, bot):
     assign_cards(gs)
     gs.card_phase_active = True
-
-    # --- 2x2 KARTALAR DIZAYNI ---
     keyboard_rows = []
     row = []
 
@@ -387,21 +447,14 @@ async def card_phase(gs: GameState, bot):
                 callback_data=f"choose_card:{gs.chat_id}:{i}"
             )
         )
-
-        # Har 2 ta kartadan keyin yangi qatordan boshlaymiz
         if len(row) == 2:
             keyboard_rows.append(row)
             row = []
-
-    # Agar oxirgi qator 1 ta karta bilan qolsa - baribir qo‘shamiz
     if row:
         keyboard_rows.append(row)
-
     kb = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
-
-    msg = await broadcast(bot, gs.chat_id, "🃏 <b>Karta tanlang!</b>", reply_markup=kb, parse_mode="HTML")
+    msg = await broadcast(bot, gs.chat_id, "🃏 <b>Karta tanlang!</b>", reply_markup=kb)
     gs.card_message_id = msg.message_id
-
     await asyncio.sleep(CARD_CHOICE_TIME)
     gs.card_phase_active = False
     killed = []
@@ -462,7 +515,7 @@ async def revive_player(callback: CallbackQuery):
     if not gs: return
     p = gs.players.get(user_id)
     if not p or p.alive:
-        return await callback.answer("Siz tiriksiniz.")
+        return await callback.answer("Siz tirik emassiz.")
     if not remove_olmos(user_id, 1):
         return await callback.answer("Olmos yetarli emas! /profile")
     p.alive = True
@@ -471,7 +524,10 @@ async def revive_player(callback: CallbackQuery):
 
 # ────────────────────── KECHA ──────────────────────
 async def night_phase(gs: GameState, bot):
-    await broadcast(bot, gs.chat_id, f"Kecha tushdi... ({NIGHT_DELAY}s)")
+
+    await bot.send_animation(gs.chat_id, FSInputFile("ajal_game_gif.mp4"),caption="Kecha tushdi! Gumondorni tanlang (30s)")
+    
+    # await broadcast(bot, gs.chat_id, f"Kecha tushdi... ({NIGHT_DELAY}s)")
     gs.night_actions.clear()
 
     # Najiro
@@ -522,7 +578,9 @@ async def night_phase(gs: GameState, bot):
 # ────────────────────── KUN ──────────────────────
 async def day_phase(gs: GameState, bot):
     gs._nominee_counts.clear()
-    await broadcast(bot, gs.chat_id, f"Kun boshlandi! Gumonli tanlang ({NOMINATE_TIME}s)")
+    # await broadcast(bot, gs.chat_id, f"Kun boshlandi! Gumonli tanlang ({NOMINATE_TIME}s)")
+    await bot.send_animation(gs.chat_id, FSInputFile("kun.mp4"),caption="Tong otdi! Gumondorni tanlang (30s)")
+    
 
     for p in gs.players.values():
         if p.alive:

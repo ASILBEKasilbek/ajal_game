@@ -21,10 +21,18 @@ from aiogram_calendar import SimpleCalendar, SimpleCalendarCallback
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 import math
 import json
+from aiogram.types import InlineKeyboardButton
+from database.db import get_all_guruhlar, add_guruh,delete_guruh,get_all_tulov_kanallar,add_tulov_kanal,delete_tulov_kanal
 router = Router()
 
 # ==================== YORDAMCHI FUNKSIYALAR ====================
+class AddGuruhState(StatesGroup):
+    waiting_for_name = State()
+    waiting_for_link = State()
 
+class AddTulovKanalState(StatesGroup):
+    waiting_for_kanal = State()
+    
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
@@ -226,16 +234,6 @@ async def battle_detail(callback: CallbackQuery, state: FSMContext):
             name1 = "Bot" if p1=="bot" else get_name_battle(p1)
             name2 = "Bot" if p2=="bot" else get_name_battle(p2)
             text += f"{name1}({v1})  🆚 {name2}({v2}) ovoz\n"
-
-    # Admin action buttons
-    # kb = InlineKeyboardMarkup(inline_keyboard=[
-    #     [IB(text="✅ Start", callback_data=f"admin_1vs1_start:{battle_id}")],
-    #     [IB(text="⏹ Finish", callback_data=f"admin_1vs1_finish:{battle_id}")],
-    #     [IB(text="✏️ Edit", callback_data=f"admin_1vs1_edit:{battle_id}")],
-    #     [IB(text="🗑 Delete", callback_data=f"admin_1vs1_delete:{battle_id}")],
-    #     [IB(text="🔙 Ortga", callback_data="manage_1vs1")]
-    # ])
-
     await callback.message.edit_text(text, parse_mode="HTML")
     await callback.answer()
 
@@ -384,16 +382,60 @@ async def group_management(callback: CallbackQuery):
 
 # ==================== TO'LOV KANALLARI ====================
 
+# ------------------- Inline button orqali list -------------------
 @router.callback_query(F.data == "list_tulov_kanallar")
 async def list_tulov(callback: CallbackQuery):
-    await show_list(callback, "tulov_kanallar", "To'lov kanallari", "kanal_id")
+    kanallar = get_all_tulov_kanallar()
+    buttons = []
 
-@router.callback_query(F.data == "add_tulov_kanallar")
-async def add_tulov_start(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("🔢 To'lov kanali <b>ID</b>sini yuboring:\n(masalan: <code>-1001234567890</code>)", parse_mode="HTML")
-    await state.set_state(AddChannelState.waiting_for_id)
-    await state.update_data(table="tulov_kanallar", id_col="kanal_id", title="To'lov kanali")
+    for kanal in kanallar:
+        kanal_text = f"ID: {kanal['kanal_id']}"
+        buttons.append([
+            InlineKeyboardButton(text=kanal_text, callback_data="noop"),
+            InlineKeyboardButton(text="❌ Delete", callback_data=f"delete_tulov:{kanal['kanal_id']}")
+        ])
+
+    # Pastga yangi kanal qo‘shish button
+    buttons.append([InlineKeyboardButton(text="➕ Yangi kanal qo'shish", callback_data="add_new_tulov")])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await callback.message.edit_text("💳 To‘lov kanallari:", reply_markup=keyboard)
     await callback.answer()
+
+@router.callback_query(F.data == "add_new_tulov")
+async def add_new_tulov_start(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("❓ To‘lov kanalining ID yoki @username kiriting:")
+    await state.set_state(AddTulovKanalState.waiting_for_kanal)
+    await callback.answer()
+
+@router.message(AddTulovKanalState.waiting_for_kanal)
+async def process_tulov_kanal(message: Message, state: FSMContext):
+    kanal_input = message.text.strip()
+
+    # Agar @username bo‘lsa, ID sifatida username saqlash yoki o‘zgartirish
+    if kanal_input.startswith("@"):
+        kanal_id = kanal_input  # Shu yerda username saqlaymiz
+    else:
+        try:
+            kanal_id = int(kanal_input)  # To‘g‘ri integer ID
+        except ValueError:
+            await message.answer("❌ Xato! Faqat @username yoki raqamli ID kiriting.")
+            return
+
+    add_tulov_kanal(kanal_id)
+    await message.answer(f"✅ {kanal_id} kanal DB-ga qo'shildi!")
+    await state.clear()
+
+@router.callback_query(F.data.startswith("delete_tulov:"))
+async def delete_tulov_callback(callback: CallbackQuery):
+    try:
+        _, kanal_id = callback.data.split(":")
+    except ValueError:
+        await callback.answer("Xatolik yuz berdi!", show_alert=True)
+        return
+
+    delete_tulov_kanal(kanal_id)
+    await callback.answer(f"🗑 {kanal_id} kanal DB-dan o‘chirildi.", show_alert=True)
 
 # ==================== MAJBURIY KANALLAR ====================
 
@@ -423,16 +465,59 @@ async def add_kanallar_start(callback: CallbackQuery, state: FSMContext):
 
 # ==================== GURUHLAR ====================
 
+# Inline button orqali guruhlarni listlash
 @router.callback_query(F.data == "list_guruhlar")
 async def list_guruhlar(callback: CallbackQuery):
-    await show_list(callback, "guruhlar", "Guruhlar", "group_id", "group_name")
-
-@router.callback_query(F.data == "add_guruhlar")
-async def add_guruh_start(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("🔢 Guruh <b>ID</b>sini yuboring:", parse_mode="HTML")
-    await state.set_state(AddChannelState.waiting_for_id)
-    await state.update_data(table="guruhlar", id_col="group_id", name_col="group_name", title="Guruh")
+    guruhlar = get_all_guruhlar()
+    buttons = []
+    for guruh in guruhlar:
+        buttons.append([
+            InlineKeyboardButton(text=guruh['group_name'], url=guruh['group_link']),
+            InlineKeyboardButton(text="❌ Delete", callback_data=f"delete_guruh:{guruh['group_name']}")
+        ])
+    
+    buttons.append([InlineKeyboardButton(text="➕ Yangi guruh qo'shish", callback_data="add_new_guruh")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await callback.message.edit_text("📜 Guruhlar ro'yxati:", reply_markup=keyboard)
     await callback.answer()
+
+@router.callback_query(F.data == "add_new_guruh")
+async def add_new_guruh_start(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("❓ Guruh nomini kiriting:")
+    await state.set_state(AddGuruhState.waiting_for_name)
+    await callback.answer()
+
+@router.message(AddGuruhState.waiting_for_name)
+async def process_guruh_name(message: Message, state: FSMContext):
+    await state.update_data(group_name=message.text)
+    await message.answer("🔗 Guruh linkini kiriting:")
+    await state.set_state(AddGuruhState.waiting_for_link)
+
+@router.message(AddGuruhState.waiting_for_link)
+async def process_guruh_link(message: Message, state: FSMContext):
+    data = await state.get_data()
+    group_name = data['group_name']
+    group_link = message.text.strip()
+
+    # Agar @username kiritilgan bo‘lsa, linkga aylantiramiz
+    if group_link.startswith("@"):
+        group_link = f"https://t.me/{group_link[1:]}"
+
+    add_guruh(group_name, group_link)
+    await message.answer(f"✅ {group_name} guruh DB-ga qo'shildi!\nLink: {group_link}")
+    await state.clear()
+
+@router.callback_query(F.data.startswith("delete_guruh:"))
+async def delete_guruh_callback(callback: CallbackQuery):
+    try:
+        _, group_name = callback.data.split(":")
+    except ValueError:
+        await callback.answer("Xatolik yuz berdi!", show_alert=True)
+        return
+
+    delete_guruh(group_name)
+    await callback.message.answer(f"🗑 {group_name} guruh DB-dan o‘chirildi.", show_alert=True)
+
 
 # ==================== QO'SHISH LOGIKASI ====================
 
@@ -600,6 +685,7 @@ async def admin_stats(callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[IB(text="🔙 Ortga", callback_data="admin")]])
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
+
 
 # ==================== REKLAMA ====================
 

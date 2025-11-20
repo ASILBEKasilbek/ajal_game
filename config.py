@@ -16,7 +16,7 @@ NIGHT_DELAY = 60
 NOMINATE_TIME = 30
 GROUP_VOTE_TIME = 30
 MADARA_POISON_ROUNDS = 2
-
+BOT_NAME = "Asilbek_yangi_test_bot"
 CLANS = ["Fire", "Water", "Wind", "Earth"]
 
 ROUND_DURATION = 300
@@ -31,9 +31,11 @@ PACKAGES = {
 
 
 CARDS = [
-    "🃏 ♣️ Chillik",
-    "🃏 ♥️ Toppon",
-    "🃏 ♦️ G'ishtin",
-    "🃏 ♠️ Qirol Qarg'a"
+    "♣️ Chillik",
+    "♥️ Toppon",
+    "♦️ G'ishtin",
+    "♠️ Qirol Qarg'a"
 ]
-JOIN_TIME = 180  # seconds
+CARD_CHOICE_TIME = 25
+
+JOIN_TIME = 180 

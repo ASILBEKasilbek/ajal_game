@@ -26,7 +26,7 @@ async def set_default_commands(bot: Bot):
             types.BotCommand(command="start", description="⚪️Botni ishga tushirish | 🟡Botni yangilash"),
             types.BotCommand(command="help", description="📚Qo'llanma | Botdan qanday foydalanish"),
             types.BotCommand(command="rules", description="📜Qoidalar"),
-            types.BotCommand(command="shop", description="🛒Do'kon"),
+            types.BotCommand(command="play", description="🃏O'yin boshlash"),
             types.BotCommand(command="game", description="🃏O'yinga ro'yxatga olish"),
         ]
     )

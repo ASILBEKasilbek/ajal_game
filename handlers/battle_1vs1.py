@@ -250,7 +250,7 @@ async def show_battle_menu(call: CallbackQuery):
     kb = InlineKeyboardBuilder()
     kb.button(text="🎮 Mening Battles", callback_data="my_battles")
     kb.button(text="🔍 Battle Qidiruv", callback_data="battle_search")
-    kb.button(text="⬅️ Ortga", callback_data="back_to_main")
+    kb.button(text="⬅️ Ortga", callback_data="start")
     kb.adjust(1)  # har qatorda 1 ta button
 
     await call.message.edit_text(
