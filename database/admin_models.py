@@ -17,3 +17,6 @@ def search_users(query: str) -> list:
     rows = c.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+

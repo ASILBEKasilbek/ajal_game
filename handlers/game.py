@@ -1011,7 +1011,7 @@ async def end_game(gs: GameState, bot, result_text: str):
             continue
 
         user['total_games'] += 1
-        add_balls(p.user_id, 50)  # bazaviy balls
+        add_balls(p.user_id, 50)
 
         is_winner = p.alive
         result_key = "win" if is_winner else "lose"
