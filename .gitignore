@@ -15,8 +15,7 @@ env/
 # Databases
 *.db
 
-# Media files
-*.mp4
+
 *.jpg
 *.png
 
