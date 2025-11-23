@@ -609,8 +609,9 @@ async def revive_player(callback: CallbackQuery):
 # ────────────────────── KECHA ──────────────────────
 async def night_phase(gs: GameState, bot):
     a = "Ajal_game_test_bot"
+    a5="ajal_oyini_alisa_bot"
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="Botga o'tish", url=f"https://t.me/{a}")]]
+        inline_keyboard=[[InlineKeyboardButton(text="Botga o'tish", url=f"https://t.me/{a5}")]]
     )
 
     # Tun fazasi xabari
