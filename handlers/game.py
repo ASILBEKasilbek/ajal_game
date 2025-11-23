@@ -769,7 +769,7 @@ async def madara_poison(cb: CallbackQuery):
 async def day_phase(gs: GameState, bot):
     if not any(p.alive for p in gs.players.values()):
         await broadcast(bot, gs.chat_id, "Hech kim tirik qolmadi. O'yin tugadi.")
-        return end_game(gs, bot)
+        return end_game(gs, bot,"Hech kim tirik qolmadi. O'yin tugadi.")
 
     gs._nominee_counts.clear()
     gs._temp_vote = None
