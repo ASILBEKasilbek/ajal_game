@@ -2,7 +2,8 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from database.user_models import get_user, save_user
+from database.user_models import get_user
+from database.db import save_user
 from database.db import init_db
 from locales import t
 from keyboards.asosiy import lang_keyboard, main_menu
@@ -12,9 +13,17 @@ from config import CLANS,JOIN_TIME,BOT_NAME
 from handlers.game import active_games, GameState, Player
 from aiogram.types import CallbackQuery
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+
+
 router = Router()
 init_db()
 
+@router.message(Command("cancel"))
+async def cmd_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Amal bekor qilindi.")
+    
 @router.message(CommandStart(deep_link=True))
 async def handle_game_join(message: Message):
     args = message.text.split()
@@ -43,7 +52,6 @@ async def handle_game_join(message: Message):
             "user_id": user.id,
             "username": user.username or "",
             "first_name": user.first_name,
-            "last_name": user.last_name or "",
             "clan": random.choice(CLANS),
             "language": "uz",
             "level": 1,
@@ -51,13 +59,16 @@ async def handle_game_join(message: Message):
         user_data = get_user(user.id)
 
     username = user_data["username"]
+    if username == "":
+        username = user.first_name
 
     gs.players[user.id] = Player(user_id=user.id, name=username)
 
     try:
         bot_info = await message.bot.get_me()
         join_url = f"https://t.me/{bot_info.username}?start=game_{chat_id}"
-        players_list = '\n'.join(f"{i+1}. {p.name}" for i, p in enumerate(gs.players.values()))
+        players_list = '\n'.join(f"{i+1}. @{p.name}" for i, p in enumerate(gs.players.values()))
+
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="O'yinga qo'shilish", url=join_url)]
         ])
@@ -79,7 +90,7 @@ async def handle_game_join(message: Message):
         return await message.answer(
             "<b>Siz o'yinga muvaffaqiyatli qo'shildingiz!</b>\n\n"
             "O'yin boshlanishini kuting...\n"
-            "Guruhga qaytish uchun pastdagi tugmani bosing.",
+            "Guruhga qaytavering uziz",
             parse_mode="HTML"
         )
 
@@ -115,8 +126,11 @@ Har bir bo'lim sizning kuchingiz, darajangiz va imkoniyatlaringizni oshiradi."""
     )
     await callback.answer()
 
+
+
 @router.message(CommandStart())
-async def start(message: Message):
+async def start(message: Message, state: FSMContext):
+    await state.clear()
     user_id = message.from_user.id
     user = get_user(user_id)
     if not user:
@@ -125,7 +139,6 @@ async def start(message: Message):
             "user_id": user_id,
             "username": message.from_user.username or "",
             "first_name": message.from_user.first_name,
-            "last_name": message.from_user.last_name or "",
             "clan": clan,
             "language": "uz",
             "level": 1,

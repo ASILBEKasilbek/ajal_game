@@ -31,9 +31,6 @@ async def set_default_commands(bot: Bot):
         ]
     )
 
-# Routerlarni qo'shamiz
-
-dp.include_router(clan_router)
 dp.include_router(admin_router)
 dp.include_router(game_router)
 dp.include_router(shop_router)
@@ -42,7 +39,7 @@ dp.include_router(profile_router)
 dp.include_router(user_router)
 dp.include_router(start_router)
 dp.include_router(battle_1vs1_router)
-
+dp.include_router(clan_router)
 
 async def main():
     print("Bot ishga tushdi...")

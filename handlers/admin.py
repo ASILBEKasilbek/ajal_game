@@ -282,12 +282,12 @@ async def hour_selected(call: CallbackQuery, state: FSMContext):
         f"📌 Tanlangan vaqt:\n<b>{final_text}</b>\n\nTasdiqlaysizmi?",
         reply_markup=kb.as_markup()
     )
-@router.callback_query(F.data == "confirm_1vs1")
+
+@router.callback_query(Battle1v1State.time, F.data == "confirm_1vs1")
 async def confirm_battle(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
+    print(data)
     final_time = data["final_time"]
-
-    # DBga battle yaratamiz
     import sqlite3, json
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()

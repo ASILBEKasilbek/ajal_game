@@ -14,12 +14,14 @@ def main_menu() -> InlineKeyboardMarkup:
     a1="ajal_oyini_alisa_bot"
     a2="Vision_care_robot"
     a3="mindx_uzbekistan_bot"
+    a4="Ajal_game_test_bot"
+    
     # a3="ustoz_shogirt10_bot"
     buttons = [
         [
             InlineKeyboardButton(
                 text="➕ Botni guruhga qo'shish",
-                url=f"https://t.me/{a3}?startgroup=true"
+                url=f"https://t.me/{a4}?startgroup=true"
             )
         ],
         [

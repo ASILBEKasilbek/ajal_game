@@ -30,30 +30,6 @@ class ClanCreateState(StatesGroup):
     waiting_group = State()
     waiting_channel = State()
 
-# --- DB MIGRATSIYA ---
-def migrate_clan_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("PRAGMA table_info(clans)")
-    columns = [col[1] for col in c.fetchall()]
-    if 'join_type' not in columns:
-        c.execute("ALTER TABLE clans ADD COLUMN join_type TEXT DEFAULT 'open'")
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS join_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            clan_name TEXT,
-            user_id INTEGER,
-            username TEXT,
-            first_name TEXT,
-            created_at TEXT DEFAULT (datetime('now'))
-        )
-    ''')
-    c.execute("UPDATE users SET clan_role = 'Lider' WHERE clan_role = 'Lider'")
-    c.execute("UPDATE users SET clan_role = 'Azo' WHERE clan_role IN ('Azo', '', NULL)")
-    conn.commit()
-    conn.close()
-
-migrate_clan_db()
 
 # --- LINK NORMALIZATSIYA ---
 def normalize_link(link: str) -> str:
@@ -83,11 +59,10 @@ def get_clan_keyboard(clan_name: str, user_id: int, lang: str, is_leader: bool =
 
 # --- ASOSIY MENYU ---
 @router.callback_query(F.data == "asosiy_clan")
-async def clan_menu(callback: CallbackQuery):
+async def cl (callback: CallbackQuery):
     lang = get_user_lang(callback)
     user = get_user(callback.from_user.id)
     keyboard = []
-    
     if user.get("clan_name"):
         keyboard.append([InlineKeyboardButton(text=f"{EMOJI['clan']} {t(lang, 'clan_my_clan')}", callback_data=f"clan:show:{user['clan_name']}")])
     
@@ -166,18 +141,13 @@ async def show_specific_clan(callback: CallbackQuery):
         f"💬 {t(lang, 'clan_group')}: {clan['clan_group'] or '_Not set_'}\n"
         f"📢 {t(lang, 'clan_channel')}: {clan['clan_channel'] or '_Not set_'}"
     )
-    print(text)
-    # await callback.answer("nima buu ")
     user_id = callback.from_user.id
     keyboard = get_clan_keyboard(clan_name, callback.from_user.id, lang, is_leader, is_co)
-    print(keyboard)
     if not callback.message:
-        print(1)
         from aiogram import Bot
         bot: Bot = callback.bot
         await bot.send_message(chat_id=user_id,reply_markup=keyboard, text=text, parse_mode="Markdown")
     else:
-        print(2)
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown", disable_web_page_preview=True)
     await callback.answer()
 
@@ -189,7 +159,6 @@ async def join_clan_handler(callback: CallbackQuery):
     user = get_user(callback.from_user.id)
     clan = show_clan(clan_name)
     join_type = get_clan_join_type(clan_name)
-
     if user.get("clan_name"):
         await callback.answer(t(lang, "clan_already_member"), show_alert=True)
         return
@@ -374,13 +343,24 @@ async def reject_join(callback: CallbackQuery):
 async def leave_clan_handler(callback: CallbackQuery):
     lang = get_user_lang(callback)
     user = get_user(callback.from_user.id)
-    if user.get("clan_role") == "Lider":
-        await callback.answer(t(lang, "clan_leader_cant_leave"), show_alert=True)
-        return
-    leave_clan(callback.from_user.id)
-    await callback.answer(t(lang, "clan_left"), show_alert=True)
-    await clan_menu(callback)
-
+    keyboard = []
+    if user.get("clan_name"):
+        keyboard.append([InlineKeyboardButton(text=f"{EMOJI['clan']} {t(lang, 'clan_my_clan')}", callback_data=f"clan:show:{user['clan_name']}")])
+    
+    keyboard += [
+        [InlineKeyboardButton(text="Qidiruv", switch_inline_query_current_chat="clan:")],
+        [InlineKeyboardButton(text=f"📋 {t(lang, 'clan_all_clans')}", callback_data="clan:all")],
+        [InlineKeyboardButton(text=f"{EMOJI['create']} {t(lang, 'clan_create')}", callback_data="create_clan")],
+        [InlineKeyboardButton(text=f"{EMOJI['back']} {t(lang, 'main_menu')}", callback_data="start")]
+    ]
+    
+    await callback.message.edit_text(
+        f"*{EMOJI['clan']} {t(lang, 'clan_menu_title')}*\n\n{t(lang, 'clan_all_clans')} {t(lang, 'back')}:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+    
 # --- KLAN YARATISH ---
 @router.callback_query(F.data == "create_clan")
 async def start_create_clan(callback: CallbackQuery, state: FSMContext):
@@ -439,6 +419,7 @@ async def receive_clan_channel(message: Message, state: FSMContext):
 
     if create_clan(data["clan_name"], message.from_user.id, data["clan_description"], data["clan_group"], channel):
         remove_olmos(message.from_user.id, 100)
+        print(data,data["clan_name"],message.from_user.id)
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute("UPDATE users SET clan_name = ?, clan_role = 'Lider' WHERE user_id = ?", (data["clan_name"], message.from_user.id))

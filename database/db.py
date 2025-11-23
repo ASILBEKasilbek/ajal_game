@@ -16,7 +16,6 @@ def init_db():
             user_id INTEGER PRIMARY KEY,
             username TEXT UNIQUE,
             first_name TEXT,
-            last_name TEXT,
             language TEXT DEFAULT 'uz',
             channel TEXT DEFAULT 'Nomalum',
             user_group TEXT DEFAULT 'Nomalum',
@@ -26,12 +25,15 @@ def init_db():
             clan_xp INTEGER DEFAULT 0,
             clan_xp_next INTEGER DEFAULT 800,
             clan_rank INTEGER DEFAULT 0,
-            total_clans INTEGER DEFAULT 0,
             clan_channel TEXT DEFAULT 'Nomalum',
             clan_group TEXT DEFAULT 'Nomalum',
             level INTEGER DEFAULT 1,
             xp INTEGER DEFAULT 0,
+            hp INTEGER DEFAULT 100,
             rank TEXT DEFAULT 'D',
+            current_rank TEXT DEFAULT 'D',
+            streak INTEGER DEFAULT 0,
+            streak_type TEXT DEFAULT 'none',
             olmos INTEGER DEFAULT 0,
             balls INTEGER DEFAULT 0,
             popularity INTEGER DEFAULT 0,
@@ -44,11 +46,20 @@ def init_db():
             days_in_game INTEGER DEFAULT 0,
             last_active TEXT,
             created_at TEXT DEFAULT (datetime('now', 'localtime'))
-
-              
         )
     ''')
-
+    
+    
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS join_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            clan_name TEXT,
+            user_id INTEGER,
+            username TEXT,
+            first_name TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    ''')
     # Games (JSON players)
     c.execute('''
         CREATE TABLE IF NOT EXISTS games (
@@ -73,6 +84,7 @@ def init_db():
             clan_xp INTEGER DEFAULT 0,
             clan_group TEXT DEFAULT 'Nomalum',
             clan_channel TEXT DEFAULT 'Nomalum',
+            join_type TEXT DEFAULT 'open',
             created_at TEXT DEFAULT (datetime('now'))
         )
     ''')
@@ -97,6 +109,7 @@ def init_db():
             kanal_name TEXT NOT NULL
         );
     """)
+    
     c.execute("""
         CREATE TABLE IF NOT EXISTS guruhlar(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,7 +179,7 @@ def add_guruh(group_name: str, group_link: str):
     c.execute("INSERT INTO guruhlar (group_name, group_link) VALUES (?, ?)", (group_name, group_link))
     conn.commit()
     conn.close()
-
+    
 def delete_guruh(group_name: str):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -200,8 +213,7 @@ def delete_tulov_kanal(kanal_id: int):
     conn.close()
 
 def update_user_field(user_id: int, field: str, value):
-    # SQL Injection prevention
-    allowed_fields = ['username', 'bio', 'channel', 'user_group', 'clan_name']
+    allowed_fields = ['username', 'bio', 'channel', 'user_group', 'clan_name','first_name']
     if field not in allowed_fields:
         raise ValueError(f"Field '{field}' not allowed for update")
     
@@ -246,29 +258,53 @@ def join_clan(user_id: int, clan_name: str) -> bool:
 
     return True
 
-def save_user(user: Dict[str, Any]):
-    user['last_active'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def save_user(user: dict):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('''
-        INSERT OR REPLACE INTO users
-        (user_id, username, first_name, last_name, language,channel,user_group,
-         clan_name, clan_role, clan_level, clan_xp, clan_xp_next, clan_rank, total_clans,
-         clan_channel, clan_group,
-         level, xp, rank, olmos, balls, popularity, popularity_today,
-         wins, total_games, last_game_result, last_game_date, bio, days_in_game, last_active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO users (
+            user_id, username, first_name, language, channel, user_group,
+            clan_name, clan_role, clan_level, clan_xp, clan_xp_next, clan_rank,
+            clan_channel, clan_group, level, xp, hp, rank, current_rank, streak,
+            streak_type, olmos, balls, popularity, popularity_today,
+            wins, total_games, last_game_result, last_game_date,
+            bio, days_in_game, last_active, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
-        user['user_id'], user.get('username'), user.get('first_name'), user.get('last_name'),
-        user.get('language', 'uz'), user.get('clan_name', 'Yo‘q'), user.get('clan_role', 'Azo'),
-        user.get('clan_level', 0), user.get('clan_xp', 0), user.get('clan_xp_next', 800),
-        user.get('clan_rank', 0), user.get('total_clans', 0), user.get('clan_channel', 'Nomalum'),
-        user.get('clan_group', 'Nomalum'), user.get('channel', 'Nomalum'), user.get('user_group', 'Nomalum'),
-        user.get('level', 1), user.get('xp', 0), user.get('rank', 'D'),
-        user.get('olmos', 0), user.get('balls', 0), user.get('popularity', 0), user.get('popularity_today', 0),
-        user.get('wins', 0), user.get('total_games', 0), user.get('last_game_result'),
-        user.get('last_game_date'), user.get('bio', 'Bio yozilmagan'), user.get('days_in_game', 0),
-        user['last_active']
+        user['user_id'],
+        user.get('username'),
+        user.get('first_name'),
+        user.get('language', 'uz'),
+        user.get('channel', 'Nomalum'),
+        user.get('user_group', 'Nomalum'),
+        user.get('clan_name', 'Yo‘q'),
+        user.get('clan_role', 'Azo'),
+        user.get('clan_level', 0),
+        user.get('clan_xp', 0),
+        user.get('clan_xp_next', 800),
+        user.get('clan_rank', 0),
+        user.get('clan_channel', 'Nomalum'),
+        user.get('clan_group', 'Nomalum'),
+        user.get('level', 1),
+        user.get('xp', 0),
+        user.get('hp', 100),
+        user.get('rank', 'D'),
+        user.get('current_rank', 'D'),
+        user.get('streak', 0),
+        user.get('streak_type', 'none'),
+        user.get('olmos', 0),
+        user.get('balls', 0),
+        user.get('popularity', 0),
+        user.get('popularity_today', 0),
+        user.get('wins', 0),
+        user.get('total_games', 0),
+        user.get('last_game_result', None),
+        user.get('last_game_date', None),
+        user.get('bio', 'Bio yozilmagan'),
+        user.get('days_in_game', 0),
+        datetime.now().strftime("%Y-%m-%d %H:%M"),  # last_active
+        datetime.now().strftime("%Y-%m-%d %H:%M")   # created_at
     ))
     conn.commit()
     conn.close()
@@ -408,15 +444,6 @@ def show_clan(clan_name: str) -> Optional[Dict[str, Any]]:
     conn.close()
     return dict(row) if row else None
 
-# def all_clans() -> list:
-#     conn = sqlite3.connect(DB_FILE)
-#     conn.row_factory = sqlite3.Row
-#     c = conn.cursor()
-#     c.execute("SELECT * FROM clans")
-#     rows = c.fetchall()
-#     conn.close()
-#     return [dict(row) for row in rows]
-
 def all_clans() -> list:
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
@@ -432,8 +459,6 @@ def all_clans() -> list:
     conn.close()
     return [dict(row) for row in rows]
 
-
-# Yangi funksiyalar
 
 def leave_clan(user_id: int) -> bool:
     user = get_user(user_id)

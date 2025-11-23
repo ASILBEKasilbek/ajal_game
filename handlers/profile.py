@@ -9,7 +9,7 @@ from locales import t
 from datetime import datetime
 import sqlite3
 from config import DB_FILE
-
+from database.db import all_clans, get_clan_join_type
 from database.admin_models import search_users
 from aiogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessageContent
 
@@ -26,7 +26,8 @@ def format_user_profile(user: dict, lang: str) -> str:
 ───────────────────────────
 👤 <b>Sizning profilingiz</b>
 ───────────────────────────
-📝 <b>Ism:</b> {user.get('first_name', 'Nomalum')} (@{user.get('username', 'Nomalum')})
+📝 <b>Ism:</b> {user.get('first_name', 'Nomalum')} 
+📝 <b>Username:</b> @{user.get('username', 'Nomalum')}
 🆔 <b>ID:</b> {user.get('user_id', 'Nomalum')}
 ───────────────────────────
 ⚔️ <b>LVL:</b> {user.get('level', 0)} 💀 ({user.get('xp', 0)} HP)
@@ -50,12 +51,12 @@ def format_user_profile(user: dict, lang: str) -> str:
 👥 <b>Clan:</b> {user.get('clan_name', 'Yoq')}
 🎖 <b>Clan roli:</b> {user.get('clan_role', 'Azo')}
 🏅 <b>Clan LVL:</b> {user.get('clan_level', 0)} ({user.get('clan_xp', 0)} / {user.get('clan_xp_next', 800)} XP)
-📊 <b>Clan reytingi:</b> #{user.get('clan_rank', 0)} / {user.get('total_clans', 0)} klan
+📊 <b>Clan reytingi:</b> #{user.get('clan_rank', 0)}
 🔗 <b>Clan Kanal:</b> {user.get('clan_channel', 'Nomalum')}
 💬 <b>Clan Guruh:</b> {user.get('clan_group', 'Nomalum')}
 ───────────────────────────
 🕒 <b>Oxirgi kirish:</b> {user.get('last_active', 'Nomalum')}
-⏳ <b>Davringiz:</b> {((datetime.now() - datetime.strptime(user["created_at"], "%Y-%m-%d %H:%M:%S")).days) if user.get("created_at") else "Nomalum"}
+⏳ <b>Davringiz:</b> {((datetime.now() - datetime.strptime(user["created_at"], "%Y-%m-%d %H:%M")).days) if user.get("created_at") else "Nomalum"}
 🌐 <b>Til:</b> {user.get('language', '🇺🇿 UZ')}
 ───────────────────────────
         """.strip()
@@ -94,7 +95,7 @@ def format_user_profile(user: dict, lang: str) -> str:
 💬 <b>Clan Group:</b> {user.get('clan_group', 'Unknown')}
 ───────────────────────────
 🕒 <b>Last Active:</b> {user.get('last_active', 'Unknown')}
-⏳ <b>Days in Game:</b> {((datetime.now() - datetime.strptime(user["created_at"], "%Y-%m-%d %H:%M:%S")).days) if user.get("created_at") else "Unknown"}
+⏳ <b>Days in Game:</b> {((datetime.now() - datetime.strptime(user["created_at"], "%Y-%m-%d %H:%M")).days) if user.get("created_at") else "Unknown"}
 🌐 <b>Language:</b> {user.get('language', '🇬🇧 EN')}
 ───────────────────────────
         """.strip()
@@ -133,7 +134,7 @@ def format_user_profile(user: dict, lang: str) -> str:
 💬 <b>Группа клана:</b> {user.get('clan_group', 'Неизвестно')}
 ───────────────────────────
 🕒 <b>Последний вход:</b> {user.get('last_active', 'Неизвестно')}
-⏳ <b>Дни в игре:</b> {((datetime.now() - datetime.strptime(user["created_at"], "%Y-%m-%d %H:%M:%S")).days) if user.get("created_at") else "Неизвестно"} дней
+⏳ <b>Дни в игре:</b> {((datetime.now() - datetime.strptime(user["created_at"], "%Y-%m-%d %H:%M")).days) if user.get("created_at") else "Неизвестно"} дней
 🌐 <b>Язык:</b> {user.get('language', '🇷🇺 RU')}
 ───────────────────────────
         """.strip()
@@ -184,7 +185,6 @@ async def edit_profile(callback: CallbackQuery):
             InlineKeyboardButton(text="💬 Guruh", callback_data="edit_user_group")
         ],
         [
-            InlineKeyboardButton(text="👥 Clan", callback_data="edit_clan_name"),
             InlineKeyboardButton(text="🔙 Ortga", callback_data="profile")
         ]
     ])
@@ -234,20 +234,21 @@ async def save_profile_edit(message: Message, state: FSMContext):
     if field == "username":
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT 1 FROM users WHERE username = ?", (value,))
+        c.execute("SELECT 1 FROM users WHERE first_name = ?", (value,))
         exists = c.fetchone()
         conn.close()
         
         if exists:
             return await message.answer("❌ Bu username allaqachon band. Iltimos boshqa username tanlang.")
-
-    
-    # Validation (optional)
+        
     if len(value) > 200:
         return await message.answer("❌ Qiymat juda uzun! (max 200 belgi)")
     
     try:
+        if field == "username":
+            field="first_name"
         update_user_field(message.from_user.id, field, value)
+
         await message.answer(
             f"✅ <b>{field.replace('_', ' ').title()}</b> muvaffaqiyatli yangilandi!\n\n"
             f"📝 Yangi qiymat: <code>{value}</code>",
@@ -258,37 +259,7 @@ async def save_profile_edit(message: Message, state: FSMContext):
     finally:
         await state.clear()
 
-# @router.inline_query()
-# async def inline_search(inline_query: InlineQuery):
-#     query = inline_query.query.strip().lower()
-#     if not query:
-#         await inline_query.answer([], cache_time=1)
-#         return
 
-#     users = search_users(query)
-
-#     results = []
-
-#     for idx, u in enumerate(users):
-#         full_name = f"{u['first_name']} {u.get('last_name', '')}".strip()
-#         username = u.get("username") or "username yo‘q"
-#         lang=u.get("language", "uz")
-
-#         results.append(
-#             InlineQueryResultArticle(
-#                 id=str(idx),
-#                 title=f"{full_name} ({username})",
-#                 description=f"Rank: {u['rank']} | Level: {u['level']}",
-#                 input_message_content=InputTextMessageContent(
-#                     message_text=format_user_profile(u, lang)
-#                 )
-#             )
-#         )
-
-#     await inline_query.answer(results, cache_time=1)
-
-
-from database.db import all_clans, get_clan_join_type
 
 @router.inline_query()
 async def inline_search(inline_query: InlineQuery):
@@ -319,7 +290,7 @@ async def inline_search(inline_query: InlineQuery):
         search_text = query[5:].strip()  # "user:" prefiksini olib tashlaymiz
         users = search_users(search_text)
         for idx, u in enumerate(users):
-            full_name = f"{u['first_name']} {u.get('last_name','')}".strip()
+            full_name = f"{u['first_name']}".strip()
             username = u.get("username") or "username yo‘q"
             lang = u.get("language","uz")
             results.append(
@@ -334,3 +305,4 @@ async def inline_search(inline_query: InlineQuery):
             )
 
     await inline_query.answer(results, cache_time=1)
+

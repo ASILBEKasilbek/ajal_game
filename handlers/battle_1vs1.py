@@ -111,7 +111,7 @@ async def battle_scheduler(bot: Bot):
                         for uid in json.loads(players_json):
                             await bot.send_message(uid, f"🎮 1vs1 battle (ID: {battle_id}) tugadi! Natijalar hisoblandi.")
                     except:
-                        pass
+                        print("Battle end notification failed.")
 
                 continue
 
@@ -172,7 +172,7 @@ async def notify_pairs(bot: Bot, battle_id: int):
                 try:
                     await bot.send_message(uid, text, reply_markup=kb.as_markup())
                 except:
-                    pass
+                    print(f"Notification to {uid} failed.")
 
     conn.close()
 
