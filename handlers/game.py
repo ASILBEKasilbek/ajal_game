@@ -494,11 +494,11 @@ async def card_phase(gs: GameState, bot):
     row = []
     found = []
     
-#     animation_file = FSInputFile("/home/ubuntu/ajal_game/card_choose.mp4")
-#     await bot.send_animation(gs.chat_id, animation_file,caption=f"""🌑 1. Karta tanlash bosqichi boshlandi
-# 🔮 “O'yinchilar, diqqatingizni jamlang.”
-# Har biringizga maxfiy rol kartalari tarqatildi.
-# Endi esa — o'zingizga tegishli kartani tanlang. Bu sizning taqdiringizni belgilaydi.""")
+    animation_file = FSInputFile("/home/ubuntu/ajal_game/card_choose.mp4")
+    await bot.send_animation(gs.chat_id, animation_file,caption=f"""🌑 1. Karta tanlash bosqichi boshlandi
+🔮 “O'yinchilar, diqqatingizni jamlang.”
+Har biringizga maxfiy rol kartalari tarqatildi.
+Endi esa — o'zingizga tegishli kartani tanlang. Bu sizning taqdiringizni belgilaydi.""")
 
     for p in gs.players.values():
         print(p.name, "card:", p.card)
