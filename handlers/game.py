@@ -19,7 +19,7 @@ from datetime import datetime
 from config import *
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
-
+import time
 router = Router()
 active_games: Dict[int, 'GameState'] = {}
 pending_anon = {}
@@ -283,7 +283,6 @@ async def start_game(message: Message):
     )
 
     try:
-        print(chat_id, msg.message_id)
         await bot.pin_chat_message(chat_id, msg.message_id, disable_notification=True)
     except:
         print("Pin message failed.")
@@ -295,7 +294,6 @@ async def start_game(message: Message):
         group_invite_link=f"https://t.me/{username}"
     )
     active_games[chat_id] = gs
-    print(f"Yangi lobby yaratildi: {chat_id}")
 
     await asyncio.sleep(JOIN_TIME)
     gs = active_games.get(chat_id)
@@ -336,7 +334,6 @@ async def begin_game(gs: GameState, bot):
 
     while gs.running:
         alive = [p for p in gs.players.values() if p.alive]
-        print("Yashayotganlar:", ', '.join(p.name for p in alive))
         if len(alive) <= 2:
             await end_game(gs, bot, f"O'yin tugadi! Qolganlar: {', '.join(p.name for p in alive)}")
             return
@@ -344,7 +341,6 @@ async def begin_game(gs: GameState, bot):
         najiro_alive = gs.najiro_id in gs.players and gs.players[gs.najiro_id].alive
         orochimaru_alive = gs.orochimaru_id in gs.players and gs.players[gs.orochimaru_id].alive
         if not najiro_alive and not orochimaru_alive:
-            # print(f"tinch o'yinchilar:{', '.join(p.name for p in alive if p.role == 'Tinch o\'yinchi')}")
             await end_game(gs, bot, "<b>Tinch o'yinchilar g'alaba qozondi!</b>")
             return
 
@@ -497,7 +493,7 @@ async def card_phase(gs: GameState, bot):
     keyboard_rows = []
     row = []
     found = []
-    await bot.send_animation(gs.chat_id, FSInputFile("ajal_game_gif.mp4"),caption=f"""🌑 1. Karta tanlash bosqichi boshlandi
+    await bot.send_animation(gs.chat_id, FSInputFile("card_choose.mp4"),caption=f"""🌑 1. Karta tanlash bosqichi boshlandi
 🔮 “O'yinchilar, diqqatingizni jamlang.”
 Har biringizga maxfiy rol kartalari tarqatildi.
 Endi esa — o'zingizga tegishli kartani tanlang. Bu sizning taqdiringizni belgilaydi.""")
@@ -789,187 +785,180 @@ Gumon qiling, bahslash, ovoz bering!
 
     alive_players = [p for p in gs.players.values() if p.alive]
 
-    # Har bir tirik o'yinchiga nominate tugmasi yuborish
     for player in alive_players:
         candidates = [p for p in alive_players if p.user_id != player.user_id]
         if not candidates:
             continue
 
         buttons = []
-        for cand in candidates[:10]:
+        for cand in candidates:
             buttons.append([InlineKeyboardButton(
-                text=f"{cand.name}",
-                callback_data=f"nominate:{gs.chat_id}:{player.user_id}:{cand.user_id}"
-            )])
-
-        if len(candidates) > 10:
-            buttons.append([InlineKeyboardButton(
-                text="🎲 Tasodifiy gumon qilish",
-                callback_data=f"nominate_auto:{gs.chat_id}:{player.user_id}"
+                text=cand.name,
+                callback_data=f"nominate:{gs.chat_id}:{cand.user_id}"
             )])
 
         kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
         try:
-            await bot.send_message(
-                player.user_id,
-                f"🔍 Kimni gumon qilasiz?\nSizda {NOMINATE_TIME} soniya bor.",
-                reply_markup=kb
-            )
-        except:
-            print("User botni bloklagan bo‘lishi mumkin")
+            await bot.send_message(player.user_id, "Kimni gumon qilasiz?", reply_markup=kb)
+        except Exception as e:
+            print(f"Xabar yuborilmadi {player.user_id}: {e}")
 
     await asyncio.sleep(NOMINATE_TIME)
 
-    # Eng ko‘p gumon qilingan odamni aniqlash
+
+    # Eng ko‘p gumon qilingan
     if not gs._nominee_counts:
         nominee = random.choice(alive_players)
-        await broadcast(bot, gs.chat_id, f"⚠️ Hech kim gumon qilinmadi!\n🎲 Tasodifiy tanlov: <b>{nominee.name}</b>")
+        await broadcast(bot, gs.chat_id, f"Hech kim gumon qilinmadi!\nTasodifiy: <b>{nominee.name}</b>")
     else:
         nominee_id = max(gs._nominee_counts.items(), key=lambda x: x[1])[0]
         nominee = gs.players[nominee_id]
         count = gs._nominee_counts[nominee_id]
-        await broadcast(bot, gs.chat_id, f"🏛 Eng ko‘p gumon qilingan: <b>{nominee.name}</b> ({count} ta ovoz)")
+        await broadcast(bot, gs.chat_id, f"Eng ko‘p gumon qilingan: <b>{nominee.name}</b> ({count} ovoz)")
 
-    # Ovoz berish boshlanishi
+    # Ovoz berish
     vote_state = {"hang": 0, "spare": 0}
     voters = set()
 
-    kb = get_vote_keyboard(gs, nominee.user_id)  # ✅ tugma funksiyasi
-
+    kb = get_vote_keyboard(gs, nominee.user_id)
     vote_msg = await broadcast(
         bot, gs.chat_id,
-        f"⚖️ <b>{nominee.name}</b> uchun ovoz berish boshlandi!\n\n"
-        f"🔥 Osish: 0 | 🛡 Qutqarish: 0\n\n"
-        f"⏱ {GROUP_VOTE_TIME} soniya ichida ovoz bering!",
+        f"<b>{nominee.name}</b> uchun ovoz bering!\n\nOsish: 0 | Qutqarish: 0",
         reply_markup=kb
     )
 
-    import time
     gs._temp_vote = {
         "vote_state": vote_state,
         "voters": voters,
         "nominee_id": nominee.user_id,
         "vote_msg_id": vote_msg.message_id,
-        "start_time": time.time()
+        "start_time": time.time(),
     }
 
-    # Vaqt tugaguncha kutish
     await asyncio.sleep(GROUP_VOTE_TIME)
 
     # Ovoz tugadi
     gs._temp_vote = None
     h, s = vote_state["hang"], vote_state["spare"]
-    await bot.edit_message_reply_markup(gs.chat_id, vote_msg.message_id, reply_markup=None)
 
     if h > s:
         nominee.alive = False
-        role_emoji = "🌀" if nominee.user_id == gs.obito_id else "💀"
-        await broadcast(bot, gs.chat_id, f"{role_emoji} <b>{nominee.name}</b> osildi!\n🔥 {h} — 🛡 {s}\n\nU {nominee.role} edi...")
+        emoji = "Obito kuchi" if nominee.user_id == gs.obito_id else "O‘ldirildi"
+        await broadcast(bot, gs.chat_id, f"{emoji} <b>{nominee.name}</b> osildi!\n{h} — {s}")
     elif h == s:
-        await broadcast(bot, gs.chat_id, f"🤝 Ovozlar teng bo‘ldi!\n🔥 {h} — 🛡 {s}\n<b>{nominee.name}</b> qutqarildi!")
+        await broadcast(bot, gs.chat_id, f"Teng! {nominee.name} qutqarildi!")
     else:
-        await broadcast(bot, gs.chat_id, f"🛡 <b>{nominee.name}</b> qutqarildi!\n🔥 {h} — 🛡 {s}")
+        await broadcast(bot, gs.chat_id, f"<b>{nominee.name}</b> qutqarildi!\n{h} — {s}")
 
-    await asyncio.sleep(5)
-    await night_phase(gs, bot)
 
 
 # ────────────────────── CALLBACKLAR ──────────────────────
-@router.callback_query(F.data.startswith("vote_hang:"))
+@router.callback_query(F.data.startswith("vh:"))
 async def vote_hang(cb: CallbackQuery):
     await handle_vote(cb, "hang")
 
-@router.callback_query(F.data.startswith("vote_spare:"))
+@router.callback_query(F.data.startswith("vs:"))
 async def vote_spare(cb: CallbackQuery):
     await handle_vote(cb, "spare")
 
-
-# ────────────────────── FUNKSIYA: real vaqtda keyboard yangilash ──────────────────────
 def get_vote_keyboard(gs, nominee_id: int):
-    voter_ids = gs._temp_vote["voters"] if gs._temp_vote else set()
-    buttons = [
-        InlineKeyboardButton(
-            text=f"🔥 Osish {'✅' if gs._temp_vote and cb_user_id in voter_ids else ''}",
-            callback_data=f"vote_hang:{gs.chat_id}:{nominee_id}"
-        ),
-        InlineKeyboardButton(
-            text=f"🛡 Qutqarish {'✅' if gs._temp_vote and cb_user_id in voter_ids else ''}",
-            callback_data=f"vote_spare:{gs.chat_id}:{nominee_id}"
-        )
-    ]
-    return InlineKeyboardMarkup(inline_keyboard=[buttons])
-
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="🔥 Osish",
+                callback_data=f"vh:{nominee_id}"  # vh = vote hang
+            ),
+            InlineKeyboardButton(
+                text="🛡 Qutqarish",
+                callback_data=f"vs:{nominee_id}"  # vs = vote spare
+            )
+        ]
+    ])
 
 async def handle_vote(cb: CallbackQuery, action: str):
     try:
-        _, cid, nid = cb.data.split(":")
-        cid, nid = int(cid), int(nid)
-        gs = active_games.get(cid)
-        if not gs or not gs._temp_vote or gs._temp_vote["nominee_id"] != nid:
-            return await cb.answer("Ovoz tugagan.")
+        nominee_id = int(cb.data.split(":")[1])
+        gs = active_games.get(cb.message.chat.id)
+        if not gs or not gs._temp_vote:
+            return await cb.answer("Ovoz berish tugagan!")
+
+        if gs._temp_vote["nominee_id"] != nominee_id:
+            return await cb.answer("Bu odam uchun ovoz berish tugagan!")
 
         voter_id = cb.from_user.id
         player = gs.players.get(voter_id)
-        if not player or not player.alive or voter_id in gs._temp_vote["voters"]:
-            return await cb.answer("Ovoz bera olmaysiz.")
+        if not player or not player.alive:
+            return await cb.answer("Siz o'ldingiz yoki o'yinda yo'qsiz!")
 
+        if voter_id in gs._temp_vote["voters"]:
+            return await cb.answer("Siz allaqachon ovoz berdingiz!")
+
+        # Obito — 2 ovoz
         count = 2 if player.user_id == gs.obito_id else 1
+
         gs._temp_vote["voters"].add(voter_id)
         gs._temp_vote["vote_state"][action] += count
 
-        await cb.answer(f"{count}x ovoz!")
+        await cb.answer(f"{count}x ovoz qabul qilindi!", show_alert=False)
 
-        # Keyboardni real vaqt yangilash
-        buttons = [
-            InlineKeyboardButton(
-                text=f"🔥 Osish {'✅' if voter_id in gs._temp_vote['voters'] else ''}",
-                callback_data=f"vote_hang:{cid}:{nid}"
-            ),
-            InlineKeyboardButton(
-                text=f"🛡 Qutqarish {'✅' if voter_id in gs._temp_vote['voters'] else ''}",
-                callback_data=f"vote_spare:{cid}:{nid}"
-            )
-        ]
-        kb = InlineKeyboardMarkup(inline_keyboard=[buttons])
-        await cb.message.edit_reply_markup(reply_markup=kb)
+        # Tugmalarni yangilash (hozirgi natija bilan)
+        h = gs._temp_vote["vote_state"]["hang"]
+        s = gs._temp_vote["vote_state"]["spare"]
+
+        new_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"🔥 Osish ({h})",
+                    callback_data=f"vh:{nominee_id}"
+                ),
+                InlineKeyboardButton(
+                    text=f"🛡 Qutqarish ({s})",
+                    callback_data=f"vs:{nominee_id}"
+                )
+            ]
+        ])
+
+        await cb.message.edit_reply_markup(reply_markup=new_kb)
+
+        # Matnni ham yangilab qo‘yamiz (chiroyli bo‘lsin)
+        text = f"<b>{gs.players[nominee_id].name}</b> uchun ovoz berish...\n\nOsish: {h} | Qutqarish: {s}"
+        await cb.message.edit_text(text, reply_markup=new_kb, parse_mode="HTML")
 
     except Exception as e:
-        print("Handle vote error:", e)
-
-
+        print("Vote error:", e)
+        await cb.answer("Xatolik yuz berdi!")
 
 
 @router.callback_query(F.data.startswith("nominate:"))
 async def nominate_player(cb: CallbackQuery):
     try:
-        _, cid, voter_id, target_id = cb.data.split(":")
-        cid, voter_id, target_id = int(cid), int(voter_id), int(target_id)
+        _, cid, target_id = cb.data.split(":")
+        cid = int(cid)
+        target_id = int(target_id)
+
         gs = active_games.get(cid)
 
-
         if not gs:
-            return await cb.answer("O‘yin topilmadi.", show_alert=True)
-        
-        # Hamma o'yinchilar o'zlarining ID-si bilan tekshiriladi
-        # player = gs.players.get(cb.from_user.id)
-        player = gs.players.get(int(cb.from_user.id))
+            return await cb.answer("O'yin mavjud emas.", show_alert=True)
+
+        voter_id = cb.from_user.id
+        player = gs.players.get(voter_id)
+
         if not player or not player.alive:
-            return await cb.answer("Siz ovoz bera olmaysiz!")
+            return await cb.answer("Siz gumon qila olmaysiz!")
 
-        # Nominee mavjudligini tekshirish
-        if int(target_id) not in gs.players:
-            return await cb.answer("Noma'lum o'yinchi!")
+        if target_id not in gs.players:
+            return await cb.answer("Bunday o‘yinchi yo‘q!")
 
-        # Obito bo'lsa — 2 ta gumon ovozi
-        count = 2 if player.user_id == gs.obito_id else 1
+        count = 2 if voter_id == gs.obito_id else 1
+        gs._nominee_counts[target_id] = gs._nominee_counts.get(target_id, 0) + count
 
-        old = gs._nominee_counts.get(int(target_id), 0)
-        gs._nominee_counts[int(target_id)] = old + count
-
-        await cb.answer(f"✅ Gumon qilindi! (+{count} ovoz)" + 
-                        (" (Obito kuchi 🌀)" if count == 2 else ""))
+        await cb.answer(f"Gumon qilindi! (+{count})")
     except Exception as e:
-        print("Nominate error:", e)
+        print("Nominate ERR:", e)
+        await cb.answer("Xatolik!")
+
 
 @router.callback_query(F.data.startswith("nominate_auto:"))
 async def nominate_auto(cb: CallbackQuery):
@@ -978,13 +967,9 @@ async def nominate_auto(cb: CallbackQuery):
         gs = active_games.get(int(cid))
         if not gs:
             return
-
-        # player = gs.players.get(cb.from_user.id)
         player = gs.players.get(int(cb.from_user.id))
         if not player or not player.alive:
             return await cb.answer("Siz ovoz bera olmaysiz!")
-
-        # Tasodifiy tanlov
         candidates = [p for p in gs.players.values() if p.alive and p.user_id != player.user_id]
         suspect = random.choice(candidates)
 
@@ -996,6 +981,14 @@ async def nominate_auto(cb: CallbackQuery):
                         (" | Obito kuchi!" if count == 2 else ""))
     except Exception as e:
         print("Nominate auto error:", e)
+
+
+
+
+
+
+
+
 
 
 
