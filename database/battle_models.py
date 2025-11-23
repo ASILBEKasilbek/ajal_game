@@ -80,6 +80,8 @@ def save_vote(battle_id: int, pair_id: int, user_id: int, amount: int, target_pl
 
 
 
+
+
 def get_name_battle(user_id):
     # DB dan user_id bo'yicha ismini oladi
     conn = sqlite3.connect(DB_FILE)

@@ -5,6 +5,9 @@ from datetime import datetime
 from config import DB_FILE
 
 
+
+
+
 def get_user(user_id):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()

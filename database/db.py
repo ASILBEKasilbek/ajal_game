@@ -552,3 +552,5 @@ def get_clan_members(clan_name: str):
     rows = c.fetchall()
     conn.close()
     return [dict(zip([col[0] for col in c.description], row)) for row in rows]
+
+
