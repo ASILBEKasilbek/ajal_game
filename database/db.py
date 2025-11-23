@@ -325,11 +325,22 @@ def remove_olmos(user_id: int, amount: int) -> bool:
     return True
 
 def add_balls(user_id: int, amount: int) -> bool:
-    user = get_user(user_id)
-    if not user: return False
-    user['balls'] = (user['balls'] or 0) + amount
-    save_user(user)
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    # Foydalanuvchi borligini tekshirish
+    c.execute("SELECT balls FROM users WHERE user_id = ?", (user_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return False
+
+    new_balls = (row[0] or 0) + amount
+    c.execute("UPDATE users SET balls = ? WHERE user_id = ?", (new_balls, user_id))
+    conn.commit()
+    conn.close()
     return True
+
+
 
 # ------------------- GAME STATE -------------------
 def save_game_state(chat_id: int, players: Dict, round_number: int, status: str = "running"):

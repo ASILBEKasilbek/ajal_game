@@ -494,11 +494,11 @@ async def card_phase(gs: GameState, bot):
     row = []
     found = []
     
-    animation_file = FSInputFile("/home/ubuntu/ajal_game/card_choose.mp4")
-    await bot.send_animation(gs.chat_id, animation_file,caption=f"""🌑 1. Karta tanlash bosqichi boshlandi
-🔮 “O'yinchilar, diqqatingizni jamlang.”
-Har biringizga maxfiy rol kartalari tarqatildi.
-Endi esa — o'zingizga tegishli kartani tanlang. Bu sizning taqdiringizni belgilaydi.""")
+#     animation_file = FSInputFile("/home/ubuntu/ajal_game/card_choose.mp4")
+#     await bot.send_animation(gs.chat_id, animation_file,caption=f"""🌑 1. Karta tanlash bosqichi boshlandi
+# 🔮 “O'yinchilar, diqqatingizni jamlang.”
+# Har biringizga maxfiy rol kartalari tarqatildi.
+# Endi esa — o'zingizga tegishli kartani tanlang. Bu sizning taqdiringizni belgilaydi.""")
 
     for p in gs.players.values():
         print(p.name, "card:", p.card)
@@ -608,6 +608,10 @@ async def revive_player(callback: CallbackQuery):
 
 # ────────────────────── KECHA ──────────────────────
 async def night_phase(gs: GameState, bot):
+    if not any(p.alive for p in gs.players.values()):
+        await broadcast(bot, gs.chat_id, "Hech kim tirik qolmadi. O'yin tugadi.")
+        return await end_game(gs, bot,"Hech kim tirik qolmadi. O'yin tugadi.")
+
     a = "Ajal_game_test_bot"
     a5="ajal_oyini_alisa_bot"
     kb = InlineKeyboardMarkup(
@@ -770,7 +774,7 @@ async def madara_poison(cb: CallbackQuery):
 async def day_phase(gs: GameState, bot):
     if not any(p.alive for p in gs.players.values()):
         await broadcast(bot, gs.chat_id, "Hech kim tirik qolmadi. O'yin tugadi.")
-        return end_game(gs, bot,"Hech kim tirik qolmadi. O'yin tugadi.")
+        return await end_game(gs, bot,"Hech kim tirik qolmadi. O'yin tugadi.")
 
     gs._nominee_counts.clear()
     gs._temp_vote = None
@@ -1000,16 +1004,9 @@ async def nominate_auto(cb: CallbackQuery):
 
 
 
-
 # ────────────────────── O'YIN TUGASHI ──────────────────────
 async def end_game(gs: GameState, bot, result_text: str):
-    roles = "\n".join(f"{p.name} — {p.role}" for p in gs.players.values())
-    await broadcast(bot, gs.chat_id, f"{result_text}\n\n<b>Rollari:</b>\n{roles}")
-
-    # G'olib faction aniqlash
-    najiro_team_win = any("najiro" in result_text.lower() or "orochimaru" in result_text.lower() for _ in [0])
-    madara_win = "madara" in result_text.lower()
-    peace_win = "tinch" in result_text.lower()
+    messages = []  # Guruhga yuboriladigan xabar
 
     for p in gs.players.values():
         user = get_user(p.user_id)
@@ -1017,60 +1014,59 @@ async def end_game(gs: GameState, bot, result_text: str):
             continue
 
         user['total_games'] += 1
-        add_balls(p.user_id, 50)
 
+        # G'olib yoki mag'lub aniqlash
         is_winner = p.alive
-        result_key = "win" if is_winner else "lose"
-        if "durang" in result_text.lower():
-            result_key = "draw"
-
-        # Streak update
-        old_streak = user.get('streak', 0)
-        old_type = user.get('streak_type')
-        if old_type == result_key:
-            user['streak'] = old_streak + 1
-        else:
-            user['streak'] = 1
-            user['streak_type'] = result_key
-
-        # Base HP from result
-        base_hp = GAME_RESULT_HP[result_key]
-        vip_multiplier = 1.5 if user.get('olmos', 0) > 0 else 1.0  # misol VIP
-        hp_gain = int(base_hp * vip_multiplier)
-
-        # Rank-based bonus/penalty
-        rank = get_rank_by_name(user.get('current_rank', 'ACE'))
         if is_winner:
-            hp_gain += HP_BONUS[rank["name"]]
-            if user['wins'] > 0:
-                user['wins'] += 1
+            earned_balls = 25
+            user['last_game_result'] = "G'olib"
         else:
-            hp_gain += HP_PENALTY[rank["name"]]
+            earned_balls = 5
+            user['last_game_result'] = "Mag'lub"
 
-        # Streak bonus
-        if user['streak'] == 3 and user['streak_type'] == "win":
-            hp_gain += STREAK_WIN_BONUS
-        elif user['streak'] == 3 and user['streak_type'] == "lose":
-            hp_gain += STREAK_LOSE_PENALTY
+        add_balls(p.user_id, earned_balls)
 
+        # Shaxsiy foydalanuvchiga xabar
+        personal_msg = (
+            f"🎮 <b>O'yin yakunlandi!</b>\n\n"
+            f"👤 Foydalanuvchi: {p.name}\n"
+            f"🏆 Natija: {user['last_game_result']}\n"
+            f"💰 Sizga berilgan ball: {earned_balls}\n"
+            f"💰 Jami ballingiz: {user.get('balls', 0)}"
+        )
+        await bot.send_message(p.user_id, personal_msg)
+
+        # Guruh xabari uchun tayyorlash
+        messages.append(
+            f"{p.name} — {p.role} — {user['last_game_result']} (+{earned_balls}ball)"
+        )
+
+        # HP va level update
         old_hp = user.get('hp', 0)
-        user['hp'] = max(0, old_hp + hp_gain)  # salbiy bo'lmasin
-
-        # Level update (hp orqali)
+        base_hp = GAME_RESULT_HP["win" if is_winner else "lose"]
+        vip_multiplier = 1.5 if user.get('olmos', 0) > 0 else 1.0
+        hp_gain = int(base_hp * vip_multiplier)
+        user['hp'] = max(0, old_hp + hp_gain)
         user['level'] = calculate_level(user['hp'])
 
-        # Rank update va xabar
+        # Rank update
         rank_message = update_rank_and_level(user, old_hp)
         if rank_message:
             await bot.send_message(p.user_id, rank_message.strip())
 
-        user['last_game_result'] = "G'olib" if is_winner else "Mag'lub"
         user['last_game_date'] = datetime.now().strftime("%Y-%m-%d")
         save_user(user)
 
+    # Guruhga yakuniy xabar yuborish
+    group_message = f"🎮 <b>O'yin yakunlandi!</b>\n{result_text}\n\n<b>Natijalar:</b>\n" + "\n".join(messages)
+    await broadcast(bot, gs.chat_id, group_message)
+
+    # O'yin holatini tozalash
     delete_game_state(gs.chat_id)
     active_games.pop(gs.chat_id, None)
     gs.running = False
+
+
 
 # ────────────────────── GURUH XABARLARI TOZALASH ──────────────────────
 @router.message(F.chat.type.in_(["group", "supergroup"]))
