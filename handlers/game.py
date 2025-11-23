@@ -493,7 +493,9 @@ async def card_phase(gs: GameState, bot):
     keyboard_rows = []
     row = []
     found = []
-    await bot.send_animation(gs.chat_id, FSInputFile("card_choose.mp4"),caption=f"""🌑 1. Karta tanlash bosqichi boshlandi
+    
+    animation_file = FSInputFile("/home/ubuntu/ajal_game/card_choose.mp4")
+    await bot.send_animation(gs.chat_id, animation_file,caption=f"""🌑 1. Karta tanlash bosqichi boshlandi
 🔮 “O'yinchilar, diqqatingizni jamlang.”
 Har biringizga maxfiy rol kartalari tarqatildi.
 Endi esa — o'zingizga tegishli kartani tanlang. Bu sizning taqdiringizni belgilaydi.""")
@@ -612,9 +614,11 @@ async def night_phase(gs: GameState, bot):
     )
 
     # Tun fazasi xabari
+
+    animation_file = FSInputFile("/home/ubuntu/ajal_game/ajal_game_gif.mp4")
     await bot.send_animation(
         gs.chat_id,
-        FSInputFile("ajal_game_gif.mp4"),
+        animation_file,
         caption=(
             "🌘 2. Tun fazasi boshlandi\n"
             "🌙 O'rmonni sukunat qopladi…\n"
@@ -771,9 +775,10 @@ async def day_phase(gs: GameState, bot):
     gs._temp_vote = None
 
     # Kunduz boshlanishi animatsiyasi
+    animation_file = FSInputFile("/home/ubuntu/ajal_game/kun.mp4")
     await bot.send_animation(
         gs.chat_id,
-        FSInputFile("kun.mp4"),
+        animation_file,
         caption="""🌕 **KUNDUZ FAZASI BOSHLANDI** ☀️
 
 Qorong‘u tun ortda qoldi... Endi haqiqat vaqti!
