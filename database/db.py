@@ -331,7 +331,7 @@ def remove_olmos(user_id: int, amount: int) -> bool:
     save_user(user)
     return True
 
-def add_balls(user_id: int, amount: int) -> bool:
+def add_balls(user_id: int, amount: int) -> int | bool:
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT balls FROM users WHERE user_id = ?", (user_id,))
@@ -344,7 +344,7 @@ def add_balls(user_id: int, amount: int) -> bool:
     c.execute("UPDATE users SET balls = ? WHERE user_id = ?", (new_balls, user_id))
     conn.commit()
     conn.close()
-    return True
+    return new_balls
 
 
 

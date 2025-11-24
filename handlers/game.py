@@ -70,6 +70,63 @@ class IsPendingAnon(BaseFilter):
         return msg.from_user.id in self.pending
 
 
+@router.message(Command("rules"))
+async def game_rules(message: Message):
+    if message.chat.type not in ["group", "supergroup", "private"]:
+        return
+    
+    text = """
+<b>🎮 AJAL O‘YINI — Qoidalar</b>
+
+O‘yin 6 ta rol orqali boshqariladi. Quyida har bir rolning vazifasi va o‘yindagi maqsadi keltirilgan.
+
+<b>🩸 1. Najiro — Qotil</b>
+• Har kechada 1 o‘yinchini o‘ldiradi  
+• Uning maqsadi — barcha o‘yinchilarni yo‘q qilish  
+• Agar Najiro o‘ldirilsa, o‘yin faqat Orochimaru tirik bo‘lsa davom etadi  
+
+<b>🐍 2. Orochimaru — Najironing Sherigi</b>
+• O‘ldira olmaydi  
+• Najironing o‘rnini bosadi  
+• Najiro o‘lsa, o‘yin darhol tugamaydi  
+• Najiro va Orochimaru ikkalasi ham o‘lsa — tinch o‘yinchilar g‘alaba qiladi  
+
+<b>⚕️ 3. Qutqaruvchi — Doctor</b>
+• O‘yin davomida 1 marta kimnidir o‘limdan saqlab qolishi mumkin  
+• O‘zini ham bitta marta davolay oladi  
+
+<b>🗳 4. Obito — Ikki ovoz egasi</b>
+• Ovoz berish paytida ovozi 2 ta ovozga teng  
+• Tinchlar tomonida bo‘ladi  
+
+<b>☠️ 5. Madara — Zaharlovchi</b>
+• Har kechada bitta o‘yinchini zaharlaydi  
+• Hamma zaharlansa — Madara g‘alaba qiladi  
+
+<b>🙂 6. Tinch o‘yinchilar</b>
+• Ularning maqsadi — Najiro va Orochimaruni topib, doriga osish  
+
+<b>🔮 Karta fazasi:</b>
+• Har raund boshida kartalar tasodifiy tarqatiladi  
+• O‘yinchilar kartasini ko‘rishi yoki boshqa o‘yinchilarning kartasini tekshirishi mumkin  
+• Ba’zi kartalar maxfiy imkoniyatlar beradi  
+
+<b>🌙 Kecha fazasi:</b>
+• Najiro — o‘ldiradi  
+• Madara — zaharlaydi  
+• Qutqaruvchi — 1 marta davolaydi  
+
+<b>🌞 Kunduzgi faza:</b>
+• Hamma muhokama qiladi  
+• Kim doriga osilishi ovoz bilan aniqlanadi  
+
+<b>🏆 O‘yin tugashi:</b>
+• Najiro + Orochimaru o‘lsa → Tinch o‘yinchilar g‘alaba  
+• Hamma zaharlansa → Madara g‘alaba  
+• Oxirida faqat yovuzlar qolsa → Najiro jamoasi g‘alaba  
+"""
+
+    await message.answer(text, parse_mode="HTML")
 
 
 @router.callback_query(F.data=="rank_level_info")
@@ -322,7 +379,6 @@ async def start_game_play(message: Message):
 
 # ────────────────────── O'YIN BOSHLANISHI ──────────────────────
 async def begin_game(gs: GameState, bot):
-    gs.running = True
     assign_roles(gs)
     for p in gs.players.values():
         print(f"{p.name} roli: {p.role}")
@@ -1023,9 +1079,11 @@ async def end_game(gs: GameState, bot, result_text: str):
             earned_balls = 5
             user['last_game_result'] = "Mag'lub"
 
-        add_balls(p.user_id, earned_balls)
 
         # Shaxsiy foydalanuvchiga xabar
+        new_balls = add_balls(p.user_id, earned_balls)
+        user['balls'] = new_balls
+
         personal_msg = (
             f"🎮 <b>O'yin yakunlandi!</b>\n\n"
             f"👤 Foydalanuvchi: {p.name}\n"
@@ -1067,6 +1125,8 @@ async def end_game(gs: GameState, bot, result_text: str):
 
 
 
+
+
 # ────────────────────── GURUH XABARLARI TOZALASH ──────────────────────
 @router.message(F.chat.type.in_(["group", "supergroup"]))
 async def delete_vote_messages(message: Message):
@@ -1077,6 +1137,7 @@ async def delete_vote_messages(message: Message):
         return
     if message.text in ("Osish", "Qutqarish"):
         await message.delete()
+
 
 
 

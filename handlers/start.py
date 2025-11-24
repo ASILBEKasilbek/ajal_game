@@ -15,7 +15,6 @@ from aiogram.types import CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
-
 router = Router()
 init_db()
 
@@ -23,7 +22,7 @@ init_db()
 async def cmd_cancel(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Amal bekor qilindi.")
-    
+
 @router.message(CommandStart(deep_link=True))
 async def handle_game_join(message: Message):
     args = message.text.split()
@@ -153,3 +152,9 @@ async def start(message: Message, state: FSMContext):
             t(lang, "welcome", name=user["first_name"], level=user["level"]),
             reply_markup=main_menu()
         )
+
+
+
+
+
+        

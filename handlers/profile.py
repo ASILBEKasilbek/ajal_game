@@ -21,6 +21,8 @@ class ProfileEditStates(StatesGroup):
 
 # ────────────────────── FORMAT PROFILE ──────────────────────
 def format_user_profile(user: dict, lang: str) -> str:
+    print(user["created_at"],datetime.now())
+    print(((datetime.now() - datetime.strptime(user["created_at"], "%Y-%m-%d %H:%M")).days) if user.get("created_at") else "Nomalum")
     if lang == "uz":
         profile_text = f"""
 ───────────────────────────

@@ -149,6 +149,7 @@ async def receive_payment_screenshot(message: Message):
 
     if result:
         ADMIN_GROUP_ID = result[0]
+        print(ADMIN_GROUP_ID)
     else:
         ADMIN_GROUP_ID = -1002938796047 
 
