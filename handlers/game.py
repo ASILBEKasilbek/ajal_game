@@ -635,7 +635,6 @@ async def night_phase(gs: GameState, bot):
     await broadcast(bot, gs.chat_id, "Boshlang:", reply_markup=kb)
     gs.night_actions.clear()
 
-    # Najiro harakati
     if gs.najiro_id and gs.players[gs.najiro_id].alive:
         targets = [p for p in gs.players.values() if p.alive and p.user_id != gs.najiro_id]
         if targets:

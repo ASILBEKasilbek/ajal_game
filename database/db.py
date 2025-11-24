@@ -260,8 +260,14 @@ def join_clan(user_id: int, clan_name: str) -> bool:
 
 
 def save_user(user: dict):
+    old = get_user(user['user_id']) or {}
+
+    def keep(field, default=None):
+        return user[field] if field in user else old.get(field, default)
+
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+
     c.execute('''
         INSERT OR REPLACE INTO users (
             user_id, username, first_name, language, channel, user_group,
@@ -273,39 +279,40 @@ def save_user(user: dict):
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         user['user_id'],
-        user.get('username'),
-        user.get('first_name'),
-        user.get('language', 'uz'),
-        user.get('channel', 'Nomalum'),
-        user.get('user_group', 'Nomalum'),
-        user.get('clan_name', 'Yo‘q'),
-        user.get('clan_role', 'Azo'),
-        user.get('clan_level', 0),
-        user.get('clan_xp', 0),
-        user.get('clan_xp_next', 800),
-        user.get('clan_rank', 0),
-        user.get('clan_channel', 'Nomalum'),
-        user.get('clan_group', 'Nomalum'),
-        user.get('level', 1),
-        user.get('xp', 0),
-        user.get('hp', 100),
-        user.get('rank', 'D'),
-        user.get('current_rank', 'D'),
-        user.get('streak', 0),
-        user.get('streak_type', 'none'),
-        user.get('olmos', 0),
-        user.get('balls', 0),
-        user.get('popularity', 0),
-        user.get('popularity_today', 0),
-        user.get('wins', 0),
-        user.get('total_games', 0),
-        user.get('last_game_result', None),
-        user.get('last_game_date', None),
-        user.get('bio', 'Bio yozilmagan'),
-        user.get('days_in_game', 0),
-        datetime.now().strftime("%Y-%m-%d %H:%M"),  # last_active
-        datetime.now().strftime("%Y-%m-%d %H:%M")   # created_at
+        keep('username'),
+        keep('first_name'),
+        keep('language', 'uz'),
+        keep('channel', 'Nomalum'),
+        keep('user_group', 'Nomalum'),
+        keep('clan_name', 'Yo‘q'),
+        keep('clan_role', 'Azo'),
+        keep('clan_level', 0),
+        keep('clan_xp', 0),
+        keep('clan_xp_next', 800),
+        keep('clan_rank', 0),
+        keep('clan_channel', 'Nomalum'),
+        keep('clan_group', 'Nomalum'),
+        keep('level', 1),
+        keep('xp', 0),
+        keep('hp', 100),
+        keep('rank', 'D'),
+        keep('current_rank', 'D'),
+        keep('streak', 0),
+        keep('streak_type', 'none'),
+        keep('olmos', 0),
+        keep('balls', 0),   # <-- ENDIIII YO‘QOLMAYDI
+        keep('popularity', 0),
+        keep('popularity_today', 0),
+        keep('wins', 0),
+        keep('total_games', 0),
+        keep('last_game_result'),
+        keep('last_game_date'),
+        keep('bio', 'Bio yozilmagan'),
+        keep('days_in_game', 0),
+        datetime.now().strftime("%Y-%m-%d %H:%M"),
+        old.get('created_at', datetime.now().strftime("%Y-%m-%d %H:%M"))
     ))
+
     conn.commit()
     conn.close()
 
@@ -327,7 +334,6 @@ def remove_olmos(user_id: int, amount: int) -> bool:
 def add_balls(user_id: int, amount: int) -> bool:
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    # Foydalanuvchi borligini tekshirish
     c.execute("SELECT balls FROM users WHERE user_id = ?", (user_id,))
     row = c.fetchone()
     if not row:
