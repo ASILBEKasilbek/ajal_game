@@ -3,7 +3,8 @@ from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKe
 from database.user_models import get_user
 from database.db import add_olmos
 from locales import t
-from config import ADMIN_GROUP_ID,PACKAGES
+from config import PACKAGES,DB_FILE
+
 
 router = Router()
 
@@ -137,6 +138,19 @@ async def receive_payment_screenshot(message: Message):
         f"👤 Foydalanuvchi: {message.from_user.full_name} (@{message.from_user.username or 'yo‘q'})\n"
         f"🆔 ID: `{message.from_user.id}`"
     )
+    import sqlite3
+
+    # DB faylingni ochamiz
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+
+    c.execute("SELECT kanal_id FROM tulov_kanallar ORDER BY id DESC LIMIT 1")
+    result = c.fetchone()
+
+    if result:
+        ADMIN_GROUP_ID = result[0]
+    else:
+        ADMIN_GROUP_ID = -1002938796047 
 
     if message.photo:
         await message.bot.send_photo(
