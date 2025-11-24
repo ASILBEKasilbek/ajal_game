@@ -173,7 +173,8 @@ async def join_clan_handler(callback: CallbackQuery):
         else:
             await callback.answer(t(lang, "cross") + " Error!", show_alert=True)
     else:
-        add_join_request(clan_name, callback.from_user.id, callback.from_user.username, callback.from_user.first_name)
+        username = callback.from_user.username or "none"
+        add_join_request(clan_name, callback.from_user.id, username, callback.from_user.first_name)
         await callback.answer(t(lang, "clan_request_sent"), show_alert=True)
 
 # --- BOSHQARUV ---
@@ -309,17 +310,17 @@ async def show_requests(callback: CallbackQuery):
     lang = get_user_lang(callback)
     requests = get_pending_requests(clan_name)
     if not requests:
-        await callback.message.edit_text(t(lang, "clan_no_requests"), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(t(lang, "back"), f"clan:manage:{clan_name}")]]))
+        await callback.message.edit_text(t(lang, "clan_no_requests"), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=t(lang, "back"), callback_data=f"clan:manage:{clan_name}")]]))
         return
 
     keyboard = []
     for req in requests:
         name = req['first_name'][:15]
         keyboard += [
-            [InlineKeyboardButton(f"{EMOJI['check']} {t(lang, 'clan_request_approve')}: {name}", f"clan:approve:{clan_name}:{req['user_id']}")],
-            [InlineKeyboardButton(f"{EMOJI['cross']} {t(lang, 'clan_request_reject')}: {name}", f"clan:reject:{clan_name}:{req['user_id']}")]
+            [InlineKeyboardButton(text=f"{EMOJI['check']} {t(lang, 'clan_request_approve')}: {name}", callback_data=f"clan:approve:{clan_name}:{req['user_id']}")],
+            [InlineKeyboardButton(text=f"{EMOJI['cross']} {t(lang, 'clan_request_reject')}: {name}", callback_data=f"clan:reject:{clan_name}:{req['user_id']}")]
         ]
-    keyboard.append([InlineKeyboardButton(f"{EMOJI['back']} {t(lang, 'back')}", f"clan:manage:{clan_name}")])
+    keyboard.append([InlineKeyboardButton(text=f"{EMOJI['back']} {t(lang, 'back')}", callback_data=f"clan:manage:{clan_name}")])
     await callback.message.edit_text(f"*{EMOJI['request']} {t(lang, 'clan_requests')}:*", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown")
 
 @router.callback_query(F.data.startswith("clan:approve:"))
@@ -343,11 +344,18 @@ async def reject_join(callback: CallbackQuery):
 async def leave_clan_handler(callback: CallbackQuery):
     lang = get_user_lang(callback)
     user = get_user(callback.from_user.id)
-    keyboard = []
-    if user.get("clan_name"):
-        keyboard.append([InlineKeyboardButton(text=f"{EMOJI['clan']} {t(lang, 'clan_my_clan')}", callback_data=f"clan:show:{user['clan_name']}")])
-    
-    keyboard += [
+
+    if not user.get("clan_name"):
+        await callback.answer(t(lang, "clan_not_member"), show_alert=True)
+        return
+
+    # 🔥 Asl chiqish funksiyasi:
+    leave_clan(callback.from_user.id)
+
+    await callback.answer(t(lang, "clan_left_success"), show_alert=True)
+
+    # 🔙 Asosiy menyuga qaytaramiz
+    keyboard = [
         [InlineKeyboardButton(text="Qidiruv", switch_inline_query_current_chat="clan:")],
         [InlineKeyboardButton(text=f"📋 {t(lang, 'clan_all_clans')}", callback_data="clan:all")],
         [InlineKeyboardButton(text=f"{EMOJI['create']} {t(lang, 'clan_create')}", callback_data="create_clan")],
@@ -355,12 +363,11 @@ async def leave_clan_handler(callback: CallbackQuery):
     ]
     
     await callback.message.edit_text(
-        f"*{EMOJI['clan']} {t(lang, 'clan_menu_title')}*\n\n{t(lang, 'clan_all_clans')} {t(lang, 'back')}:",
+        f"*{EMOJI['clan']} {t(lang, 'clan_menu_title')}*\n\n{t(lang, 'clan_left_success')}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
         parse_mode="Markdown"
     )
-    await callback.answer()
-    
+
 # --- KLAN YARATISH ---
 @router.callback_query(F.data == "create_clan")
 async def start_create_clan(callback: CallbackQuery, state: FSMContext):

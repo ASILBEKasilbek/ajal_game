@@ -452,6 +452,15 @@ def add_row(table: str, column_values: dict):
     conn.commit()
     conn.close()
 
+# def show_clan(clan_name: str) -> Optional[Dict[str, Any]]:
+#     conn = sqlite3.connect(DB_FILE)
+#     conn.row_factory = sqlite3.Row
+#     c = conn.cursor()
+#     c.execute("SELECT * FROM clans WHERE clan_name = ?", (clan_name,))
+#     row = c.fetchone()
+#     conn.close()
+#     return dict(row) if row else None
+
 def show_clan(clan_name: str) -> Optional[Dict[str, Any]]:
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
@@ -459,7 +468,11 @@ def show_clan(clan_name: str) -> Optional[Dict[str, Any]]:
     c.execute("SELECT * FROM clans WHERE clan_name = ?", (clan_name,))
     row = c.fetchone()
     conn.close()
-    return dict(row) if row else None
+
+    if not row:
+        return None
+
+    return {key: row[key] for key in row.keys()}
 
 def all_clans() -> list:
     conn = sqlite3.connect(DB_FILE)
