@@ -17,6 +17,7 @@ ROUND_DURATION = 300
 XP_PER_KILL = 25
 
 GAME_RESULT_HP = {"win": 10, "lose": 3, "draw": 5}
+
 PACKAGES = {
     "10": {"amount": 10, "price": 10000},
     "20": {"amount": 20, "price": 18000},

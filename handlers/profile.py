@@ -8,7 +8,7 @@ from database.db import update_user_field,get_user
 from locales import t
 from datetime import datetime
 import sqlite3
-from config import DB_FILE
+from config import DB_FILE,RANKS
 from database.db import all_clans, get_clan_join_type
 from database.admin_models import search_users
 from aiogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessageContent
@@ -19,10 +19,41 @@ router = Router()
 class ProfileEditStates(StatesGroup):
     waiting_for_value = State()
 
+def next_level_total_xp(hp: int) -> int:
+    cumulative = 0
+    req = 20
+
+    for l in range(1, 100):
+        # Agar hp hozirgi level chegara ichida bo'lsa
+        if hp < cumulative + req:
+            return cumulative + req  # keyingi levelning umumiy XP chegarasi
+
+        # Level oshdi
+        cumulative += req
+
+        # Keyingi level train
+        if l + 1 <= 10:
+            req = {2:40,3:60,4:90,5:130,6:180,7:250,8:350,9:500,10:800}[l + 1]
+        elif l + 1 <= 15:
+            req = int(1000 + (l + 1 - 10) * 400)
+        else:
+            req = int(req * 1.6)
+
+    return cumulative
+
+
 # ────────────────────── FORMAT PROFILE ──────────────────────
 def format_user_profile(user: dict, lang: str) -> str:
-    print(user["created_at"],datetime.now())
-    print(((datetime.now() - datetime.strptime(user["created_at"], "%Y-%m-%d %H:%M")).days) if user.get("created_at") else "Nomalum")
+    print(user)
+    for i in RANKS:
+        if user.get("rank")==i["name"]:
+            user_rank_next_hp=i["next_hp"]
+            break
+    else:
+        user_rank_next_hp="2500"
+    k=next_level_total_xp(user.get("hp",0))   
+    print(k)
+
     if lang == "uz":
         profile_text = f"""
 ───────────────────────────
@@ -32,8 +63,8 @@ def format_user_profile(user: dict, lang: str) -> str:
 📝 <b>Username:</b> @{user.get('username', 'Nomalum')}
 🆔 <b>ID:</b> {user.get('user_id', 'Nomalum')}
 ───────────────────────────
-⚔️ <b>LVL:</b> {user.get('level', 0)} 💀 ({user.get('xp', 0)} HP)
-🏆 <b>RANK:</b> {user.get('rank', 'Nomalum')}
+⚔️ <b>LVL:</b> {user.get('level', 0)} 💀 ({user.get('hp', 0)} / {k} HP)
+🏆 <b>RANK:</b> {user.get('current_rank', 'Nomalum')} 🥇 ({user.get('hp',0)} / {user_rank_next_hp} HP)
 ───────────────────────────
 💎 <b>Olmoslar:</b> {user.get('olmos', 0)}
 🎁 <b>Ballar:</b> {user.get('balls', 0)}

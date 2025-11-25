@@ -402,24 +402,6 @@ def get_clan(clan_name: str) -> Optional[Dict]:
     conn.close()
     return dict(row) if row else None
 
-def join_clan(user_id: int, clan_name: str) -> bool:
-    clan = get_clan(clan_name)
-    user = get_user(user_id)
-    if not clan or not user or user['clan_name'] != 'Yo‘q':
-        return False
-    user['clan_name'] = clan_name
-    user['clan_role'] = 'Azo'
-    user['clan_channel'] = clan['clan_channel']
-    user['clan_group'] = clan['clan_group']
-    save_user(user)
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("UPDATE clans SET members_count = members_count + 1 WHERE clan_name = ?", (clan_name,))
-    conn.commit()
-    conn.close()
-    return True
-
-
 def fetch_all(query: str, params: tuple = ()) -> list:
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row

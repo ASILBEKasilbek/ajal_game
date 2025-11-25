@@ -9,6 +9,7 @@ from aiogram.types import (
 import asyncio
 import random
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, Optional
 from database.db import (
     get_user, save_user, remove_olmos, add_balls,
@@ -23,6 +24,38 @@ import time
 router = Router()
 active_games: Dict[int, 'GameState'] = {}
 pending_anon = {}
+
+CARD_ANIMATION_PATH = "/home/ubuntu/ajal_game/card_choose.mp4"
+NIGHT_ANIMATION_PATH = "/home/ubuntu/ajal_game/ajal_game_gif.mp4"
+DAY_ANIMATION_PATH = "/home/ubuntu/ajal_game/kun.mp4"
+MEDIA_FALLBACK_DIRS = [Path("/home/ubuntu/ajal_game"), Path(__file__).resolve().parents[1]]
+
+
+def _resolve_media_file(path_str: str) -> Optional[Path]:
+    """Return an existing media file path using a couple of fallback locations."""
+    candidate = Path(path_str)
+    if candidate.exists():
+        return candidate
+    if not candidate.name:
+        return None
+    for base in MEDIA_FALLBACK_DIRS:
+        fallback = base / candidate.name
+        if fallback.exists():
+            return fallback
+    return None
+
+
+async def send_animation_or_text(bot, chat_id: int, path_str: str, caption: str, **kwargs):
+    file_path = _resolve_media_file(path_str)
+    if file_path:
+        await bot.send_animation(chat_id, FSInputFile(str(file_path)), caption=caption, **kwargs)
+    else:
+        text_kwargs = {}
+        if 'reply_markup' in kwargs:
+            text_kwargs['reply_markup'] = kwargs['reply_markup']
+        if 'parse_mode' in kwargs:
+            text_kwargs['parse_mode'] = kwargs['parse_mode']
+        await bot.send_message(chat_id, caption, **text_kwargs)
 
 
 @dataclass
@@ -368,7 +401,7 @@ async def start_game(message: Message):
 async def start_game_play(message: Message):
     gs = active_games.get(message.chat.id)
     if not gs or gs.running or len(gs.players) < 5:
-        return await message.answer("Kamida 5 kishi kerak!", show_alert=False)
+        return await message.answer("Kamida 5 kishi kerak!")
     await message.answer("O'yin boshlanmoqda...")
     gs.running = True 
     await safe_delete(message.bot, message.chat.id, gs.lobby_message_id)
@@ -492,6 +525,8 @@ async def buy_card_reveal(cb: CallbackQuery, state: FSMContext):
         return await cb.answer("Bu sizniki emas!", show_alert=True)
     
     user = get_user(user_id)
+    if not user:
+        return await cb.answer("Foydalanuvchi topilmadi!", show_alert=True)
     buttons = []
     if user.get("olmos", 0) >= 1:
         buttons.append(InlineKeyboardButton(text="1 💎 bilan ochish", callback_data=f"reveal_with_olmos:{user_id}"))
@@ -508,7 +543,8 @@ async def buy_card_reveal(cb: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("reveal_with_olmos:"))
 async def reveal_with_olmos(cb: CallbackQuery):
     user_id = int(cb.data.split(":")[1])
-    remove_olmos(user_id, 1)
+    if not remove_olmos(user_id, 1):
+        return await cb.answer("Olmos yetarli emas!", show_alert=True)
     gs = active_games.get(cb.message.chat.id)
     if not gs:
         for g in active_games.values():
@@ -517,12 +553,17 @@ async def reveal_with_olmos(cb: CallbackQuery):
                 break
     if not gs:
         return await cb.answer("O‘yin topilmadi yoki tugallangan!", show_alert=True)
-    player = gs.players[user_id]
+    player = gs.players.get(user_id)
+    if not player:
+        return await cb.answer("O'yinchi topilmadi!", show_alert=True)
     await cb.message.edit_text(f"💳 Kartangiz ochildi!\nSizning kartangiz: <b>{player.card}</b>\nXarajat: 1 💎", parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("reveal_with_balls:"))
 async def reveal_with_balls(cb: CallbackQuery):
     user_id = int(cb.data.split(":")[1])
+    user = get_user(user_id)
+    if not user or (user.get("balls", 0) < 150):
+        return await cb.answer("150 ball yetarli emas!", show_alert=True)
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("UPDATE users SET balls = balls - 150 WHERE user_id = ?", (user_id,))
@@ -537,7 +578,9 @@ async def reveal_with_balls(cb: CallbackQuery):
     if not gs:
         return await cb.answer("O‘yin topilmadi yoki tugallangan!", show_alert=True)
     
-    player = gs.players[user_id]
+    player = gs.players.get(user_id)
+    if not player:
+        return await cb.answer("O'yinchi topilmadi!", show_alert=True)
     await cb.message.edit_text(f"💳 Kartangiz ochildi!\nSizning kartangiz: <b>{player.card}</b>\nXarajat: 150 balls", parse_mode="HTML")
 
 
@@ -550,11 +593,15 @@ async def card_phase(gs: GameState, bot):
     row = []
     found = []
     
-    animation_file = FSInputFile("/home/ubuntu/ajal_game/card_choose.mp4")
-    await bot.send_animation(gs.chat_id, animation_file,caption=f"""🌑 1. Karta tanlash bosqichi boshlandi
+    await send_animation_or_text(
+        bot,
+        gs.chat_id,
+        CARD_ANIMATION_PATH,
+        """🌑 1. Karta tanlash bosqichi boshlandi
 🔮 “O'yinchilar, diqqatingizni jamlang.”
 Har biringizga maxfiy rol kartalari tarqatildi.
-Endi esa — o'zingizga tegishli kartani tanlang. Bu sizning taqdiringizni belgilaydi.""")
+Endi esa — o'zingizga tegishli kartani tanlang. Bu sizning taqdiringizni belgilaydi."""
+    )
 
     for p in gs.players.values():
         print(p.name, "card:", p.card)
@@ -676,17 +723,15 @@ async def night_phase(gs: GameState, bot):
 
     # Tun fazasi xabari
 
-    animation_file = FSInputFile("/home/ubuntu/ajal_game/ajal_game_gif.mp4")
-    await bot.send_animation(
+    await send_animation_or_text(
+        bot,
         gs.chat_id,
-        animation_file,
-        caption=(
-            "🌘 2. Tun fazasi boshlandi\n"
-            "🌙 O'rmonni sukunat qopladi…\n"
-            "Soya orasida kimdir harakatga tushdi.\n"
-            "Bu tunda kimningdir hayoti xavf ostida.\n"
-            "“Hech kimga ishonmang, tun — aldamchi.”"
-        )
+        NIGHT_ANIMATION_PATH,
+        "🌘 2. Tun fazasi boshlandi\n"
+        "🌙 O'rmonni sukunat qopladi…\n"
+        "Soya orasida kimdir harakatga tushdi.\n"
+        "Bu tunda kimningdir hayoti xavf ostida.\n"
+        "“Hech kimga ishonmang, tun — aldamchi.”"
     )
     await broadcast(bot, gs.chat_id, "Boshlang:", reply_markup=kb)
     gs.night_actions.clear()
@@ -835,17 +880,18 @@ async def day_phase(gs: GameState, bot):
     gs._temp_vote = None
 
     # Kunduz boshlanishi animatsiyasi
-    animation_file = FSInputFile("/home/ubuntu/ajal_game/kun.mp4")
-    await bot.send_animation(
+    await send_animation_or_text(
+        bot,
         gs.chat_id,
-        animation_file,
-        caption="""🌕 **KUNDUZ FAZASI BOSHLANDI** ☀️
+        DAY_ANIMATION_PATH,
+        """🌕 **KUNDUZ FAZASI BOSHLANDI** ☀️
 
 Qorong‘u tun ortda qoldi... Endi haqiqat vaqti!
 Kim yolg‘on gapiryapti? Kim qotil?
 Gumon qiling, bahslash, ovoz bering!
 
-⏱ Gumon qilish uchun 60 soniya vaqtingiz bor."""
+⏱ Gumon qilish uchun 60 soniya vaqtingiz bor.""",
+        parse_mode="Markdown"
     )
 
     alive_players = [p for p in gs.players.values() if p.alive]

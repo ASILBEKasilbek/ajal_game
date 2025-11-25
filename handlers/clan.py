@@ -68,6 +68,12 @@ def get_clan_keyboard(clan_name: str, user_id: int, lang: str, is_leader: bool =
             )
         ])
 
+    keyboard.append([
+        InlineKeyboardButton(
+            text=f"👥 {t(lang, 'clan_members_list')}",
+            callback_data=f"clan:view_members:{clan_name}"
+        )
+    ])
     keyboard.append([InlineKeyboardButton(text=f"📋 {t(lang, 'clan_all_clans')}", callback_data="clan:all")])
     if is_leader or is_co:
         keyboard.append([InlineKeyboardButton(text=f"{EMOJI['settings']} {t(lang, 'clan_management')}", callback_data=f"clan:manage:{clan_name}")])
@@ -286,6 +292,30 @@ async def clan_members(callback: CallbackQuery):
 
     keyboard.append([InlineKeyboardButton(text=f"{EMOJI['back']} {t(lang, 'back')}", callback_data=f"clan:manage:{clan_name}")])
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown")
+
+
+@router.callback_query(F.data.startswith("clan:view_members:"))
+async def public_clan_members(callback: CallbackQuery):
+    _, _, clan_name = callback.data.split(":", 2)
+    lang = get_user_lang(callback)
+    members = get_clan_members(clan_name)
+    if not members:
+        await callback.answer(t(lang, "clan_no_members"), show_alert=True)
+        return
+
+    lines = [f"*{EMOJI['clan']} {t(lang, 'clan_members_list')} — {clan_name}*", ""]
+    role_map = {
+        "Lider": EMOJI['leader'],
+        "Zam Lider": EMOJI['co_leader']
+    }
+    for member in members:
+        emoji = role_map.get(member.get('clan_role'), EMOJI['member'])
+        lines.append(f"{emoji} [{member['first_name']}](tg://user?id={member['user_id']})")
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=f"{EMOJI['back']} {t(lang, 'back')}", callback_data=f"clan:show:{clan_name}")]]
+    )
+    await callback.message.edit_text("\n".join(lines), reply_markup=keyboard, parse_mode="Markdown")
 
 async def render_join_type_settings(callback: CallbackQuery, clan_name: str):
     lang = get_user_lang(callback)
