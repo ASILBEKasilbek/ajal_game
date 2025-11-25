@@ -32,7 +32,7 @@ CARDS = [
     "♠️ Qirol Qarg'a"
 ]
 
-CARD_CHOICE_TIME = 60
+CARD_CHOICE_TIME = 80
 JOIN_TIME = 180 
 
 NIGHT_DELAY = 40

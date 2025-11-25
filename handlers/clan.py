@@ -29,6 +29,7 @@ class ClanCreateState(StatesGroup):
     waiting_description = State()
     waiting_group = State()
     waiting_channel = State()
+    waiting_join_type = State()
 
 
 # --- LINK NORMALIZATSIYA ---
@@ -46,12 +47,28 @@ def get_user_lang(callback: CallbackQuery | Message) -> str:
     return user.get("lang", "uz")
 
 def get_clan_keyboard(clan_name: str, user_id: int, lang: str, is_leader: bool = False, is_co: bool = False):
+    user = get_user(user_id)
+    is_member = bool(user and user.get("clan_name") == clan_name)
     join_type = get_clan_join_type(clan_name)
     join_text = t(lang, "clan_join_request") if join_type == "request" else t(lang, "clan_join_open")
-    keyboard = [
-        [InlineKeyboardButton(text=f"{EMOJI['join']} {join_text}", callback_data=f"clan:join:{clan_name}")],
-        [InlineKeyboardButton(text=f"📋 {t(lang, 'clan_all_clans')}", callback_data="clan:all")]
-    ]
+
+    keyboard = []
+    if not is_member:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"{EMOJI['join']} {join_text}",
+                callback_data=f"clan:join:{clan_name}"
+            )
+        ])
+    else:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"{EMOJI['leave']} {t(lang, 'clan_leave')}",
+                callback_data="clan:leave"
+            )
+        ])
+
+    keyboard.append([InlineKeyboardButton(text=f"📋 {t(lang, 'clan_all_clans')}", callback_data="clan:all")])
     if is_leader or is_co:
         keyboard.append([InlineKeyboardButton(text=f"{EMOJI['settings']} {t(lang, 'clan_management')}", callback_data=f"clan:manage:{clan_name}")])
     keyboard.append([InlineKeyboardButton(text=f"{EMOJI['back']} {t(lang, 'back')}", callback_data="asosiy_clan")])
@@ -98,8 +115,9 @@ async def show_all_clans(callback: CallbackQuery):
     clans = clans[:5]
     keyboard = []
     for clan in clans:
-        join_emoji = EMOJI['request'] if get_clan_join_type(clan['clan_name']) == "request" else EMOJI['open']
-        join_text = t(lang, 'clan_join_request_type') if get_clan_join_type(clan['clan_name']) == "request" else t(lang, 'clan_join_open_type')
+        join_type = get_clan_join_type(clan['clan_name'])
+        join_emoji = EMOJI['request'] if join_type == "request" else EMOJI['open']
+        join_text = t(lang, 'clan_join_request_type') if join_type == "request" else t(lang, 'clan_join_open_type')
         button_text = f"{clan['clan_name']}\n   LVL {clan['clan_level']} | 👥 {clan['members_count']}/10 | {join_emoji} {join_text}"
         keyboard.append([InlineKeyboardButton(text=button_text, callback_data=f"clan:show:{clan['clan_name']}")])
     
@@ -156,26 +174,64 @@ async def show_specific_clan(callback: CallbackQuery):
 async def join_clan_handler(callback: CallbackQuery):
     _, _, clan_name = callback.data.split(":", 2)
     lang = get_user_lang(callback)
-    user = get_user(callback.from_user.id)
     clan = show_clan(clan_name)
-    join_type = get_clan_join_type(clan_name)
-    if user.get("clan_name"):
+    if not clan:
+        await callback.answer(t(lang, "clan_no_clans"), show_alert=True)
+        return
+
+    user = get_user(callback.from_user.id)
+    if not user:
+        await callback.answer(EMOJI['cross'] + " User not found.", show_alert=True)
+        return
+
+    current_clan = (user.get("clan_name") or "Yo'q").replace("Yo‘", "Yo'")
+    if current_clan not in ["Yo'q", "Yo`q", "Yo’q", "Yo'", "Yoʻq"]:
         await callback.answer(t(lang, "clan_already_member"), show_alert=True)
         return
-    if clan['members_count'] >= 10:
+
+    join_type = get_clan_join_type(clan_name)
+    members_count = int(clan.get('members_count', 0))
+    if members_count >= 10:
         await callback.answer(t(lang, "clan_full"), show_alert=True)
         return
 
     if join_type == "open":
         if join_clan(callback.from_user.id, clan_name):
             await callback.answer(t(lang, "clan_join_success"), show_alert=True)
-            await show_specific_clan(callback)
+            # yangi callback yaratish
+            new_callback = callback.model_copy(update={"data": f"clan:show:{clan_name}"})
+            await show_specific_clan(new_callback)
         else:
-            await callback.answer(t(lang, "cross") + " Error!", show_alert=True)
-    else:
-        username = callback.from_user.username or "none"
-        add_join_request(clan_name, callback.from_user.id, username, callback.from_user.first_name)
-        await callback.answer(t(lang, "clan_request_sent"), show_alert=True)
+            await callback.answer(f"{EMOJI['cross']} {t(lang, 'clan_join_error')}", show_alert=True)
+        return
+
+
+    pending = get_pending_requests(clan_name)
+    if any(req['user_id'] == callback.from_user.id for req in pending):
+        await callback.answer(t(lang, "clan_request_exists"), show_alert=True)
+        return
+
+    username = callback.from_user.username or "none"
+    first_name = callback.from_user.first_name
+    add_join_request(clan_name, callback.from_user.id, username, first_name)
+
+    leader_id = clan.get("creator_id")
+    if leader_id and leader_id != callback.from_user.id:
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text=f"{EMOJI['check']} {t(lang, 'clan_request_approve')}", callback_data=f"clan:approve:{clan_name}:{callback.from_user.id}"),
+                    InlineKeyboardButton(text=f"{EMOJI['cross']} {t(lang, 'clan_request_reject')}", callback_data=f"clan:reject:{clan_name}:{callback.from_user.id}")
+                ]
+            ]
+        )
+        await callback.bot.send_message(
+            chat_id=leader_id,
+            text=f"{first_name} {t(lang, 'clan_request_sent')} → {clan_name}",
+            reply_markup=keyboard
+        )
+
+    await callback.answer(t(lang, "clan_request_sent"), show_alert=True)
 
 # --- BOSHQARUV ---
 @router.callback_query(F.data.startswith("clan:manage:"))
@@ -231,7 +287,22 @@ async def clan_members(callback: CallbackQuery):
     keyboard.append([InlineKeyboardButton(text=f"{EMOJI['back']} {t(lang, 'back')}", callback_data=f"clan:manage:{clan_name}")])
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown")
 
-# --- QO‘SHILISH TURINI O‘ZGARTIRISH ---
+async def render_join_type_settings(callback: CallbackQuery, clan_name: str):
+    lang = get_user_lang(callback)
+    current_type = get_clan_join_type(clan_name)
+    current_label = t(lang, 'clan_join_open_type') if current_type == 'open' else t(lang, 'clan_join_request_type')
+    keyboard = [
+        [InlineKeyboardButton(text=f"{('✅ ' if current_type == 'open' else '')}{EMOJI['open']} {t(lang, 'clan_set_join_open')}", callback_data=f"clan:set_join:open:{clan_name}")],
+        [InlineKeyboardButton(text=f"{('✅ ' if current_type == 'request' else '')}{EMOJI['request']} {t(lang, 'clan_set_join_request')}", callback_data=f"clan:set_join:request:{clan_name}")],
+        [InlineKeyboardButton(text=f"{EMOJI['back']} {t(lang, 'back')}", callback_data=f"clan:manage:{clan_name}")]
+    ]
+    await callback.message.edit_text(
+        f"*{EMOJI['settings']} {t(lang, 'clan_join_type_settings')} — {current_label}*",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="Markdown"
+    )
+
+
 @router.callback_query(F.data.startswith("clan:join_type:"))
 async def change_join_type(callback: CallbackQuery):
     _, _, clan_name = callback.data.split(":", 2)
@@ -239,13 +310,7 @@ async def change_join_type(callback: CallbackQuery):
     if get_user(callback.from_user.id).get("clan_role") != "Lider":
         await callback.answer(t(lang, "clan_only_leader"), show_alert=True)
         return
-
-    keyboard = [
-        [InlineKeyboardButton(text=f"{EMOJI['open']} {t(lang, 'clan_set_join_open')}", callback_data=f"clan:set_join:open:{clan_name}")],
-        [InlineKeyboardButton(text=f"{EMOJI['request']} {t(lang, 'clan_set_join_request')}", callback_data=f"clan:set_join:request:{clan_name}")],
-        [InlineKeyboardButton(text=f"{EMOJI['back']} {t(lang, 'back')}", callback_data=f"clan:manage:{clan_name}")]
-    ]
-    await callback.message.edit_text(f"*{EMOJI['settings']} {t(lang, 'clan_join_type_settings')}:*", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard), parse_mode="Markdown")
+    await render_join_type_settings(callback, clan_name)
 
 @router.callback_query(F.data.startswith("clan:set_join:"))
 async def set_join_type(callback: CallbackQuery):
@@ -254,9 +319,13 @@ async def set_join_type(callback: CallbackQuery):
     if get_user(callback.from_user.id).get("clan_role") != "Lider":
         await callback.answer(t(lang, "clan_no_permission"), show_alert=True)
         return
+    if jtype not in {"open", "request"}:
+        await callback.answer(f"{EMOJI['cross']} {t(lang, 'clan_join_error')}", show_alert=True)
+        return
     set_clan_join_type(clan_name, jtype)
-    await callback.answer(f"{EMOJI['check']} {t(lang, 'clan_join_type')}: {t(lang, 'clan_set_join_open') if jtype == 'open' else t(lang, 'clan_set_join_request')}", show_alert=True)
-    await clan_management(callback)
+    label = t(lang, 'clan_set_join_open') if jtype == 'open' else t(lang, 'clan_set_join_request')
+    await callback.answer(f"{EMOJI['check']} {t(lang, 'clan_join_type_updated')} ({label})", show_alert=True)
+    await render_join_type_settings(callback, clan_name)
 
 # --- LIDERLIK O‘TKAZISH ---
 @router.callback_query(F.data.startswith("clan:transfer:"))
@@ -279,9 +348,14 @@ async def start_transfer_leadership(callback: CallbackQuery):
 async def confirm_transfer(callback: CallbackQuery):
     _, _, clan_name, target_id = callback.data.split(":", 3)
     lang = get_user_lang(callback)
+    
     transfer_leadership(clan_name, callback.from_user.id, int(target_id))
     await callback.answer(t(lang, "clan_transferred"), show_alert=True)
-    await show_specific_clan(callback)
+    
+    # ❗ YANGI CALLBACK
+    fake = callback
+    fake.data = f"clan:show:{clan_name}"
+    await show_specific_clan(fake)
 
 # --- PROMOTE / KICK / REQUESTS ---
 @router.callback_query(F.data.startswith("clan:promote:"))
@@ -345,11 +419,14 @@ async def leave_clan_handler(callback: CallbackQuery):
     lang = get_user_lang(callback)
     user = get_user(callback.from_user.id)
 
-    if not user.get("clan_name"):
+    clan_name = user.get("clan_name")
+    if not clan_name or clan_name in ["Yo‘q", "Yo'q", "Yo`q", "Yoʻq"]:
         await callback.answer(t(lang, "clan_not_member"), show_alert=True)
         return
-
-    # 🔥 Asl chiqish funksiyasi:
+    if user.get("clan_role") == "Lider":
+        await callback.answer(t(lang, "clan_leader_cant_leave"), show_alert=True)
+        return
+    
     leave_clan(callback.from_user.id)
 
     await callback.answer(t(lang, "clan_left_success"), show_alert=True)
@@ -373,6 +450,10 @@ async def leave_clan_handler(callback: CallbackQuery):
 async def start_create_clan(callback: CallbackQuery, state: FSMContext):
     lang = get_user_lang(callback)
     user = get_user(callback.from_user.id)
+    if user.get("clan_role")=="Lider":
+        await callback.answer("Siz allaqachon klan liderisiz boshqa clan yarata olmaysiz", show_alert=True)
+        return
+    
     if user["olmos"] < 100:
         await callback.answer(f"{EMOJI['cross']} {t(lang, 'clan_create')} ", show_alert=True)
         return
@@ -408,7 +489,7 @@ async def receive_clan_group(message: Message, state: FSMContext):
     if not (group.startswith("@") or "t.me/" in group):
         await message.answer(f"{EMOJI['cross']} @username or t.me/link")
         return
-    await state.update_data(clan_group=group)
+    await state.update_data(clan_group=normalize_link(group))
     await message.answer(t(lang, 'clan_create_channel'))
     await state.set_state(ClanCreateState.waiting_channel)
 
@@ -419,32 +500,70 @@ async def receive_clan_channel(message: Message, state: FSMContext):
     if not (channel.startswith("@") or "t.me/" in channel or "https://" in channel):
         await message.answer(f"{EMOJI['cross']} @kanal or https://t.me/kanal")
         return
+    await state.update_data(clan_channel=normalize_link(channel))
 
-    channel_url = normalize_link(channel)
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"{EMOJI['open']} {t(lang, 'clan_set_join_open')}", callback_data="create_clan_join_type:open")],
+            [InlineKeyboardButton(text=f"{EMOJI['request']} {t(lang, 'clan_set_join_request')}", callback_data="create_clan_join_type:request")]
+        ]
+    )
+    await message.answer(t(lang, 'clan_choose_join_type'), reply_markup=keyboard)
+    await state.set_state(ClanCreateState.waiting_join_type)
+
+
+@router.callback_query(F.data.startswith("create_clan_join_type:"))
+async def finalize_clan_creation(callback: CallbackQuery, state: FSMContext):
+    lang = get_user_lang(callback)
+    _, _, join_type = callback.data.split(":", 2)
+    if join_type not in {"open", "request"}:
+        await callback.answer(f"{EMOJI['cross']} {t(lang, 'clan_join_error')}", show_alert=True)
+        return
+
+    current_state = await state.get_state()
+    if current_state != ClanCreateState.waiting_join_type.state:
+        await callback.answer(t(lang, 'clan_creation_expired'), show_alert=True)
+        return
+
     data = await state.get_data()
-    clan_group_url = normalize_link(data["clan_group"])
+    required_fields = ["clan_name", "clan_description", "clan_group", "clan_channel"]
+    if not all(data.get(field) for field in required_fields):
+        await callback.answer(t(lang, 'clan_creation_expired'), show_alert=True)
+        await state.clear()
+        return
 
-    if create_clan(data["clan_name"], message.from_user.id, data["clan_description"], data["clan_group"], channel):
-        remove_olmos(message.from_user.id, 100)
-        print(data,data["clan_name"],message.from_user.id)
+    if create_clan(
+        data["clan_name"],
+        callback.from_user.id,
+        data["clan_description"],
+        data["clan_group"],
+        data["clan_channel"],
+        join_type
+    ):
+        remove_olmos(callback.from_user.id, 100)
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("UPDATE users SET clan_name = ?, clan_role = 'Lider' WHERE user_id = ?", (data["clan_name"], message.from_user.id))
+        c.execute(
+            "UPDATE users SET clan_name = ?, clan_role = 'Lider' WHERE user_id = ?",
+            (data["clan_name"], callback.from_user.id)
+        )
         conn.commit()
         conn.close()
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"📢 {t(lang, 'clan_channel_btn')}", url=channel_url)],
-            [InlineKeyboardButton(text=f"💬 {t(lang, 'clan_group_btn')}", url=clan_group_url)],
+            [InlineKeyboardButton(text=f"📢 {t(lang, 'clan_channel_btn')}", url=data["clan_channel"])],
+            [InlineKeyboardButton(text=f"💬 {t(lang, 'clan_group_btn')}", url=data["clan_group"])],
             [InlineKeyboardButton(text=f"{EMOJI['clan']} {t(lang, 'clan_menu_btn')}", callback_data="asosiy_clan")]
         ])
-        await message.answer(
+        await callback.message.answer(
             f"*{EMOJI['check']} {t(lang, 'clan_created')}* `{data['clan_name']}`\n\n"
-            f"{EMOJI['leader']} {t(lang, 'clan_leader')}: {message.from_user.first_name}\n"
+            f"{EMOJI['leader']} {t(lang, 'clan_leader')}: {callback.from_user.first_name}\n"
             f"100 olmos olindi",
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
+        await callback.answer(t(lang, 'clan_created'))
     else:
-        await message.answer(t(lang, "clan_name_taken"))
+        await callback.answer(t(lang, "clan_name_taken"), show_alert=True)
+
     await state.clear()

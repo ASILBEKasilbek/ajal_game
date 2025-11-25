@@ -230,26 +230,18 @@ def join_clan(user_id: int, clan_name: str) -> bool:
     if not clan or not user:
         return False
 
-    # TO‘G‘RI: Agar allaqachon shu klanda bo‘lsa — ruxsat berilmaydi
-    if user['clan_name'] == clan_name:
+    current_clan = (user.get('clan_name') or 'Yo‘q')
+    if current_clan not in ['Yo‘q', "Yo'q", 'Yo`q', 'Yoʻq', None] and current_clan != clan_name:
+        return False
+    if current_clan == clan_name:
         return False
 
-    # OLDINGI KLANdan chiqish (agar bo‘lsa)
-    old_clan_name = user['clan_name']
-    if old_clan_name != 'Yo‘q':
-        # Eski klandan a'zolar sonini kamaytirish
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("UPDATE clans SET members_count = members_count - 1 WHERE clan_name = ?", (old_clan_name,))
-        conn.commit()
-        conn.close()
-
-    # YANGI klanda qo‘shish
     user['clan_name'] = clan_name
     user['clan_role'] = 'Azo'
+    user['clan_channel'] = clan.get('clan_channel', 'Nomalum')
+    user['clan_group'] = clan.get('clan_group', 'Nomalum')
     save_user(user)
 
-    # Yangi klanda a'zolar sonini oshirish
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("UPDATE clans SET members_count = members_count + 1 WHERE clan_name = ?", (clan_name,))
@@ -377,7 +369,7 @@ def delete_game_state(chat_id: int):
     conn.close()
 
 # ------------------- CLAN -------------------
-def create_clan(clan_name, creator_id, clan_description, clan_group, clan_channel):
+def create_clan(clan_name, creator_id, clan_description, clan_group, clan_channel, join_type="open"):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
@@ -387,12 +379,15 @@ def create_clan(clan_name, creator_id, clan_description, clan_group, clan_channe
         conn.close()
         return False
 
+    if join_type not in {"open", "request"}:
+        join_type = "open"
+
     # Yangi klan yaratish
     c.execute('''
     INSERT INTO clans 
-    (clan_name, clan_description, creator_id, clan_group, clan_channel)
-    VALUES (?, ?, ?, ?, ?)
-    ''', (clan_name, clan_description, creator_id, clan_group, clan_channel))
+    (clan_name, clan_description, creator_id, clan_group, clan_channel, join_type)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ''', (clan_name, clan_description, creator_id, clan_group, clan_channel, join_type))
     
     conn.commit()
     conn.close()
