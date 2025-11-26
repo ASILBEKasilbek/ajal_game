@@ -51,7 +51,6 @@ async def handle_game_join(message: Message):
             "user_id": user.id,
             "username": user.username or "",
             "first_name": user.first_name,
-            "clan": random.choice(CLANS),
             "language": "uz",
             "level": 1,
         })
@@ -133,12 +132,10 @@ async def start(message: Message, state: FSMContext):
     user_id = message.from_user.id
     user = get_user(user_id)
     if not user:
-        clan = random.choice(CLANS)
         user = {
             "user_id": user_id,
             "username": message.from_user.username or "",
             "first_name": message.from_user.first_name,
-            "clan": clan,
             "language": "uz",
             "level": 1,
         }
