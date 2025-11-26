@@ -408,8 +408,6 @@ async def start_game_play(message: Message):
     await begin_game(gs, message.bot)
 
 
-
-
 # ────────────────────── O'YIN BOSHLANISHI ──────────────────────
 async def begin_game(gs: GameState, bot):
     assign_roles(gs)
@@ -645,7 +643,8 @@ Endi esa — o'zingizga tegishli kartani tanlang. Bu sizning taqdiringizni belgi
                 await bot.send_message(
                     p.user_id,
                     f"Siz o'ldingiz!\n\nBoshqalar kartalari:\n",
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    protect_content=True
                 )
                 revive_kb = InlineKeyboardMarkup(inline_keyboard=[[
                     InlineKeyboardButton(
@@ -743,7 +742,7 @@ async def night_phase(gs: GameState, bot):
                 inline_keyboard=[[InlineKeyboardButton(text=p.name, callback_data=f"najiro_kill:{gs.chat_id}:{p.user_id}")]
                                  for p in targets[:10]]
             )
-            await bot.send_message(gs.najiro_id, "Siz najirosiz kimni o'ldirishni tanlang?", reply_markup=kb)
+            await bot.send_message(gs.najiro_id, "Siz najirosiz kimni o'ldirishni tanlang?", reply_markup=kb, protect_content=True)
 
     # Qutqaruvchi harakati
     if gs.qutqaruvchi_id and gs.players[gs.qutqaruvchi_id].alive and not gs.qutqaruvchi_used:
@@ -751,7 +750,7 @@ async def night_phase(gs: GameState, bot):
             inline_keyboard=[[InlineKeyboardButton(text=p.name, callback_data=f"qutqaruvchi_save:{gs.chat_id}:{p.user_id}")]
                              for p in gs.players.values() if p.alive]
         )
-        await bot.send_message(gs.qutqaruvchi_id, "Siz Qutqaruvchisiz kimni qutqarishni xohlaysiz? (1 marta)", reply_markup=kb)
+        await bot.send_message(gs.qutqaruvchi_id, "Siz Qutqaruvchisiz kimni qutqarishni xohlaysiz? (1 marta)", reply_markup=kb, protect_content=True)
 
     # Madara harakati
     if gs.madara_id and gs.players[gs.madara_id].alive:
@@ -761,7 +760,7 @@ async def night_phase(gs: GameState, bot):
                 inline_keyboard=[[InlineKeyboardButton(text=p.name, callback_data=f"madara_poison:{gs.chat_id}:{p.user_id}")]
                                  for p in targets[:10]]
             )
-            await bot.send_message(gs.madara_id, "Kimni zaharlamoqchisiz?", reply_markup=kb)
+            await bot.send_message(gs.madara_id, "Kimni zaharlamoqchisiz?", reply_markup=kb, protect_content=True)
 
     # Tun tugashini kutish
     await asyncio.sleep(NIGHT_DELAY)
@@ -788,7 +787,7 @@ async def night_phase(gs: GameState, bot):
         p_poisoned = gs.players.get(poison)
         if p_poisoned:
             p_poisoned.poisoned = True
-            await bot.send_message(poison, "Siz <b>zaharlandingiz</b>!", parse_mode="HTML")
+            await bot.send_message(poison, "Siz <b>zaharlandingiz</b>!", parse_mode="HTML", protect_content=True)
 
 
 
@@ -873,7 +872,6 @@ async def madara_poison(cb: CallbackQuery):
 # ────────────────────── KUN ──────────────────────
 async def day_phase(gs: GameState, bot):
     if not any(p.alive for p in gs.players.values()):
-        await broadcast(bot, gs.chat_id, "Hech kim tirik qolmadi. O'yin tugadi.")
         return await end_game(gs, bot,"Hech kim tirik qolmadi. O'yin tugadi.")
 
     gs._nominee_counts.clear()
@@ -892,6 +890,10 @@ Gumon qiling, bahslash, ovoz bering!
 
 ⏱ Gumon qilish uchun 60 soniya vaqtingiz bor.""",
         parse_mode="Markdown"
+    )
+    a5="ajal_oyini_alisa_bot"
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Botga o'tish", url=f"https://t.me/{a5}")]]
     )
 
     alive_players = [p for p in gs.players.values() if p.alive]
@@ -1122,20 +1124,20 @@ async def end_game(gs: GameState, bot, result_text: str):
             earned_balls = 25
             user['last_game_result'] = "G'olib"
         else:
-            earned_balls = 5
+            earned_balls = 3
             user['last_game_result'] = "Mag'lub"
 
 
         # Shaxsiy foydalanuvchiga xabar
+        print(f"{p.name} o'yin natijasi: {user['last_game_result']}, ball: {earned_balls}",p.user_id)
         new_balls = add_balls(p.user_id, earned_balls)
-        user['balls'] = new_balls
 
         personal_msg = (
             f"🎮 <b>O'yin yakunlandi!</b>\n\n"
             f"👤 Foydalanuvchi: {p.name}\n"
             f"🏆 Natija: {user['last_game_result']}\n"
             f"💰 Sizga berilgan ball: {earned_balls}\n"
-            f"💰 Jami ballingiz: {user.get('balls', 0)}"
+            f"💰 Jami ballingiz: {new_balls}"
         )
         await bot.send_message(p.user_id, personal_msg)
 

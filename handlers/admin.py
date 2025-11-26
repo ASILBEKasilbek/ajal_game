@@ -672,6 +672,8 @@ async def admin_stats(callback: CallbackQuery):
     c.execute("SELECT SUM(wins) FROM users"); total_wins = c.fetchone()[0] or 0
     c.execute("SELECT SUM(total_games) FROM users"); total_games = c.fetchone()[0] or 0
     conn.close()
+    from .game import active_games
+
 
     text = f"""📊 <b>Bot Statistika</b>
 
@@ -680,6 +682,7 @@ async def admin_stats(callback: CallbackQuery):
 🎮 Jami o‘yinlar: <code>{total_games}</code>
 🏆 Jami g‘alabalar: <code>{total_wins}</code>
 🏰 Klanning soni: <code>{total_clans}</code>
+⚔️ Faol o‘yinlar: <code>{len(active_games)}</code>
 """
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[IB(text="🔙 Ortga", callback_data="admin")]])

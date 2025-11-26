@@ -10,6 +10,9 @@ from database.battle_models import save_vote, get_cost,get_name, get_balance, up
 from datetime import datetime
 import asyncio
 from datetime import datetime, timezone, timedelta
+from aiogram.fsm.context import FSMContext
+from aiogram.types import Message
+from aiogram.fsm.state import State, StatesGroup
 
 
 router = Router()
@@ -253,13 +256,15 @@ async def show_battle_menu(call: CallbackQuery):
     kb.button(text="⬅️ Ortga", callback_data="start")
     kb.adjust(1)  # har qatorda 1 ta button
 
-    await call.message.edit_text(
-        "1vs1 Battle menyusiga xush kelibsiz! Tanlang:",
-        reply_markup=kb.as_markup()
-    )
-from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
-from aiogram.fsm.state import State, StatesGroup
+    from aiogram.exceptions import TelegramBadRequest
+    try:
+        await call.message.edit_text(
+            "1vs1 Battle menyusiga xush kelibsiz! Tanlang:",
+            reply_markup=kb.as_markup()
+        )
+    except TelegramBadRequest:
+        pass 
+
 
 # FSM state
 class BattleSearchStates(StatesGroup):
@@ -336,11 +341,6 @@ async def battle_search_id(message: Message, state: FSMContext):
     battle_id, p1, p2, votes1, votes2 = row
     user_id = message.from_user.id
 
-    # kb = InlineKeyboardBuilder()
-    # kb.button(text=f"Ovoz berish {get_name(p1)}", callback_data=f"vote:{battle_id}:{pair_id}:{p1}")
-    # if p2 != "bot":
-    #     kb.button(text=f"Ovoz berish {get_name(p2)}", callback_data=f"vote:{battle_id}:{pair_id}:{p2}")
-    # kb.adjust(1)
     kb = InlineKeyboardBuilder()
     kb.button(text=f"{get_name(p1)} 🔥", callback_data=f"vote:{battle_id}:{pair_id}:{p1}")
 
