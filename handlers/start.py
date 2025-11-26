@@ -3,7 +3,7 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from database.user_models import get_user
-from database.db import save_user
+from database.db import save_user1
 from database.db import init_db
 from locales import t
 from keyboards.asosiy import lang_keyboard, main_menu
@@ -47,7 +47,7 @@ async def handle_game_join(message: Message):
     user_data = get_user(user.id)
 
     if not user_data:
-        save_user({
+        save_user1({
             "user_id": user.id,
             "username": user.username or "",
             "first_name": user.first_name,
@@ -139,7 +139,7 @@ async def start(message: Message, state: FSMContext):
             "language": "uz",
             "level": 1,
         }
-        save_user(user)
+        save_user1(user)
 
     lang = user.get("language", "uz")
     if message.chat.type in ["group", "supergroup"]:

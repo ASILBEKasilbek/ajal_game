@@ -251,62 +251,62 @@ def join_clan(user_id: int, clan_name: str) -> bool:
     return True
 
 
-# def save_user(user: dict):
-#     old = get_user(user['user_id']) or {}
+def save_user1(user: dict):
+    old = get_user(user['user_id']) or {}
 
-#     def keep(field, default=None):
-#         return user[field] if field in user else old.get(field, default)
+    def keep(field, default=None):
+        return user[field] if field in user else old.get(field, default)
 
-#     conn = sqlite3.connect(DB_FILE)
-#     c = conn.cursor()
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
 
-#     c.execute('''
-#         INSERT OR REPLACE INTO users (
-#             user_id, username, first_name, language, channel, user_group,
-#             clan_name, clan_role, clan_level, clan_xp, clan_xp_next, clan_rank,
-#             clan_channel, clan_group, level, xp, hp, rank, current_rank, streak,
-#             streak_type, olmos, balls, popularity, popularity_today,
-#             wins, total_games, last_game_result, last_game_date,
-#             bio, days_in_game, last_active, created_at
-#         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-#     ''', (
-#         user['user_id'],
-#         keep('username'),
-#         keep('first_name'),
-#         keep('language', 'uz'),
-#         keep('channel', 'Nomalum'),
-#         keep('user_group', 'Nomalum'),
-#         keep('clan_name', 'Yo‘q'),
-#         keep('clan_role', 'Azo'),
-#         keep('clan_level', 0),
-#         keep('clan_xp', 0),
-#         keep('clan_xp_next', 800),
-#         keep('clan_rank', 0),
-#         keep('clan_channel', 'Nomalum'),
-#         keep('clan_group', 'Nomalum'),
-#         keep('level', 1),
-#         keep('xp', 0),
-#         keep('hp', 100),
-#         keep('rank', 'D'),
-#         keep('current_rank', 'D'),
-#         keep('streak', 0),
-#         keep('streak_type', 'none'),
-#         keep('olmos', 0),
-#         keep('balls', 0),   # <-- ENDIIII YO‘QOLMAYDI
-#         keep('popularity', 0),
-#         keep('popularity_today', 0),
-#         keep('wins', 0),
-#         keep('total_games', 0),
-#         keep('last_game_result'),
-#         keep('last_game_date'),
-#         keep('bio', 'Bio yozilmagan'),
-#         keep('days_in_game', 0),
-#         datetime.now().strftime("%Y-%m-%d %H:%M"),
-#         old.get('created_at', datetime.now().strftime("%Y-%m-%d %H:%M"))
-#     ))
+    c.execute('''
+        INSERT OR REPLACE INTO users (
+            user_id, username, first_name, language, channel, user_group,
+            clan_name, clan_role, clan_level, clan_xp, clan_xp_next, clan_rank,
+            clan_channel, clan_group, level, xp, hp, rank, current_rank, streak,
+            streak_type, olmos, balls, popularity, popularity_today,
+            wins, total_games, last_game_result, last_game_date,
+            bio, days_in_game, last_active, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        user['user_id'],
+        keep('username'),
+        keep('first_name'),
+        keep('language', 'uz'),
+        keep('channel', 'Nomalum'),
+        keep('user_group', 'Nomalum'),
+        keep('clan_name', 'Yo‘q'),
+        keep('clan_role', 'Azo'),
+        keep('clan_level', 0),
+        keep('clan_xp', 0),
+        keep('clan_xp_next', 800),
+        keep('clan_rank', 0),
+        keep('clan_channel', 'Nomalum'),
+        keep('clan_group', 'Nomalum'),
+        keep('level', 1),
+        keep('xp', 0),
+        keep('hp', 100),
+        keep('rank', 'D'),
+        keep('current_rank', 'D'),
+        keep('streak', 0),
+        keep('streak_type', 'none'),
+        keep('olmos', 0),
+        keep('balls', 0),   # <-- ENDIIII YO‘QOLMAYDI
+        keep('popularity', 0),
+        keep('popularity_today', 0),
+        keep('wins', 0),
+        keep('total_games', 0),
+        keep('last_game_result'),
+        keep('last_game_date'),
+        keep('bio', 'Bio yozilmagan'),
+        keep('days_in_game', 0),
+        datetime.now().strftime("%Y-%m-%d %H:%M"),
+        old.get('created_at', datetime.now().strftime("%Y-%m-%d %H:%M"))
+    ))
 
-#     conn.commit()
-#     conn.close()
+    conn.commit()
+    conn.close()
 
 
 def save_user(user: dict):
