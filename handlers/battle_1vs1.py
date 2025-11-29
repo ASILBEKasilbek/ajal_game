@@ -18,6 +18,22 @@ from aiogram.fsm.state import State, StatesGroup
 router = Router()
 LOCAL_TZ = timezone(timedelta(hours=5))  
 
+
+def parse_scheduled_time(raw: str) -> datetime:
+    """Return timezone-aware datetime for stored battle timestamps."""
+    if not raw:
+        raise ValueError("empty scheduled_time")
+    candidates = ["%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"]
+    for fmt in candidates:
+        try:
+            dt = datetime.strptime(raw, fmt)
+            break
+        except ValueError:
+            continue
+    else:
+        dt = datetime.fromisoformat(raw)
+    return dt if dt.tzinfo else dt.replace(tzinfo=LOCAL_TZ)
+
 def generate_pairs(players):
     random.shuffle(players)
     pairs = []
@@ -54,8 +70,7 @@ async def join_battle(call: CallbackQuery):
     conn.commit()
     conn.close()
 
-    dt = datetime.strptime(scheduled_time, "%Y-%m-%d %H:%M")
-
+    dt = parse_scheduled_time(scheduled_time).astimezone(LOCAL_TZ)
     time_str = dt.strftime("%d %B %Y, %H:%M %p") 
 
     await call.message.edit_text(
@@ -66,9 +81,9 @@ async def join_battle(call: CallbackQuery):
 
     ⏱ <u>Boshlanish vaqti:</u> <b>{time_str}</b>
     """,
-        parse_mode="HTML",
-        show_alert=True
+        parse_mode="HTML"
     )
+    await call.answer("✅ Battle ga qo'shildingiz!", show_alert=True)
 
 async def battle_scheduler(bot: Bot):
     while True:
@@ -81,7 +96,11 @@ async def battle_scheduler(bot: Bot):
         now = datetime.now(LOCAL_TZ)
 
         for battle_id, players_json, time_str, status in battles:
-            battle_time = datetime.strptime(time_str, "%Y-%m-%d %H:%M").replace(tzinfo=LOCAL_TZ)
+            try:
+                battle_time = parse_scheduled_time(time_str).astimezone(LOCAL_TZ)
+            except Exception as exc:
+                print(f"[battle_scheduler] Invalid scheduled_time for battle {battle_id}: {time_str} ({exc})")
+                continue
 
             # 1 kun o‘tgach tugagan battle’larni yakunlash
             if now >= battle_time + timedelta(days=1):

@@ -542,18 +542,14 @@ async def receive_clan_channel(message: Message, state: FSMContext):
     await state.set_state(ClanCreateState.waiting_join_type)
 
 
-@router.callback_query(F.data.startswith("create_clan_join_type"))
-async def set_clan_join_type(callback: CallbackQuery,state: FSMContext):
-
-    _, join_type = callback.data.split(":")
-    
-    print(join_type)
-
+@router.callback_query(F.data.startswith("create_clan_join_type:"))
+async def finalize_clan_creation(callback: CallbackQuery, state: FSMContext):
     lang = get_user_lang(callback)
+    _, _, join_type = callback.data.split(":", 2)
     if join_type not in {"open", "request"}:
         await callback.answer(f"{EMOJI['cross']} {t(lang, 'clan_join_error')}", show_alert=True)
         return
-    
+
     current_state = await state.get_state()
     if current_state != ClanCreateState.waiting_join_type.state:
         await callback.answer(t(lang, 'clan_creation_expired'), show_alert=True)

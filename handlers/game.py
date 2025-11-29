@@ -1,11 +1,13 @@
 # handlers/game.py
 import sqlite3
+import html
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup,
     InlineKeyboardButton, FSInputFile
 )
+from aiogram.exceptions import TelegramBadRequest
 import asyncio
 import random
 from dataclasses import dataclass, field
@@ -13,7 +15,7 @@ from pathlib import Path
 from typing import Dict, Optional
 from database.db import (
     get_user, save_user, remove_olmos, add_balls,
-    save_game_state, delete_game_state
+    save_game_state, get_game_state, delete_game_state
 )
 from aiogram.filters import BaseFilter
 from datetime import datetime
@@ -24,6 +26,16 @@ import time
 router = Router()
 active_games: Dict[int, 'GameState'] = {}
 pending_anon = {}
+
+
+def get_or_restore_game(chat_id: int) -> Optional['GameState']:
+    gs = active_games.get(chat_id)
+    if gs:
+        return gs
+    restored = restore_game_state_from_db(chat_id)
+    if restored:
+        active_games[chat_id] = restored
+    return restored
 
 CARD_ANIMATION_PATH = "/home/ubuntu/ajal_game/card_choose.mp4"
 NIGHT_ANIMATION_PATH = "/home/ubuntu/ajal_game/ajal_game_gif.mp4"
@@ -58,6 +70,8 @@ async def send_animation_or_text(bot, chat_id: int, path_str: str, caption: str,
         await bot.send_message(chat_id, caption, **text_kwargs)
 
 
+
+
 @dataclass
 class Player:
     user_id: int
@@ -69,6 +83,7 @@ class Player:
     can_save: bool = False
     card: Optional[str] = None
     chosen_card: Optional[str] = None
+
 
 @dataclass
 class GameState:
@@ -90,6 +105,127 @@ class GameState:
     _temp_vote: Optional[Dict] = None
     game_winners: list = field(default_factory=list)
     group_invite_link: str = ""
+
+
+def _player_snapshot(player: Player) -> Dict:
+    return {
+        "user_id": player.user_id,
+        "name": player.name,
+        "alive": player.alive,
+        "role": player.role,
+        "double_vote": player.double_vote,
+        "poisoned": player.poisoned,
+        "can_save": player.can_save,
+        "card": player.card,
+        "chosen_card": player.chosen_card,
+    }
+
+
+def format_alive_players(gs: GameState) -> str:
+    alive = [p for p in gs.players.values() if p.alive]
+    if not alive:
+        return "Hech kim"
+    return "\n".join(
+        f"{idx + 1}. {html.escape(p.name)}" for idx, p in enumerate(alive)
+    )
+
+
+async def announce_alive(bot, gs: GameState, heading: str):
+    text = (
+        f"{heading}\n\n"
+        f"<b>Tirik o'yinchilar ({sum(1 for p in gs.players.values() if p.alive)}):</b>\n"
+        f"{format_alive_players(gs)}"
+    )
+    await broadcast(bot, gs.chat_id, text)
+
+
+async def notify_player_death(bot, player: Player, reason: str, gs: GameState):
+    alive_snapshot = format_alive_players(gs)
+    try:
+        await bot.send_message(
+            player.user_id,
+            (
+                "❌ Siz o'yindan chiqdingiz.\n"
+                f"Sabab: {reason}.\n\n"
+                f"<b>Hozir tiriklar:</b>\n{alive_snapshot}\n\n"
+                "Istasangiz kuzatishda davom eting yoki tirilish tugmalaridan foydalaning."
+            ),
+            parse_mode="HTML"
+        )
+    except Exception as exc:
+        print("Death DM failed:", exc)
+
+
+def _build_state_payload(gs: GameState, phase: str) -> Dict:
+    players_payload = {str(uid): _player_snapshot(p) for uid, p in gs.players.items()}
+    meta = {
+        "round": gs.round_number,
+        "phase": phase,
+        "running": gs.running,
+        "naji": gs.najiro_id,
+        "orochimaru": gs.orochimaru_id,
+        "qutqaruvchi": gs.qutqaruvchi_id,
+        "obito": gs.obito_id,
+        "madara": gs.madara_id,
+        "night_actions": gs.night_actions,
+        "qutqaruvchi_used": gs.qutqaruvchi_used,
+        "card_phase_active": gs.card_phase_active,
+    }
+    return {"meta": meta, "players": players_payload}
+
+
+def persist_game_state(gs: GameState, phase: str, status: Optional[str] = None):
+    snapshot = _build_state_payload(gs, phase)
+    save_game_state(
+        gs.chat_id,
+        snapshot,
+        gs.round_number,
+        status or ("running" if gs.running else "pending")
+    )
+
+
+def restore_game_state_from_db(chat_id: int) -> Optional[GameState]:
+    record = get_game_state(chat_id)
+    if not record:
+        return None
+
+    payload = record.get("players", {})
+    if not isinstance(payload, dict):
+        payload = {}
+
+    meta = payload.get("meta", {}) if "meta" in payload else {}
+    players_blob = payload.get("players") if "players" in payload else payload
+
+    gs = GameState(chat_id=chat_id)
+    gs.round_number = record.get("round_number", meta.get("round", 0))
+    gs.running = record.get("status") == "running"
+    gs.najiro_id = meta.get("naji")
+    gs.orochimaru_id = meta.get("orochimaru")
+    gs.qutqaruvchi_id = meta.get("qutqaruvchi")
+    gs.obito_id = meta.get("obito")
+    gs.madara_id = meta.get("madara")
+    gs.night_actions = meta.get("night_actions", {}) or {}
+    gs.qutqaruvchi_used = meta.get("qutqaruvchi_used", False)
+    gs.card_phase_active = meta.get("card_phase_active", False)
+
+    for uid_str, pdata in (players_blob or {}).items():
+        if not isinstance(pdata, dict):
+            continue
+        user_id = pdata.get("user_id") or int(uid_str)
+        player = Player(
+            user_id=user_id,
+            name=pdata.get("name", "Anon"),
+            alive=pdata.get("alive", True),
+            role=pdata.get("role", "Tinch o'yinchi"),
+            double_vote=pdata.get("double_vote", False),
+            poisoned=pdata.get("poisoned", False),
+            can_save=pdata.get("can_save", False),
+            card=pdata.get("card"),
+            chosen_card=pdata.get("chosen_card")
+        )
+        gs.players[user_id] = player
+
+    return gs
 
 class CardActions(StatesGroup):
     waiting_anon_target = State()
@@ -294,6 +430,38 @@ def assign_cards(gs: GameState):
             p.card = random.choice(CARDS)
             p.chosen_card = None
 
+
+async def evaluate_victory(gs: GameState, bot) -> bool:
+    if not gs.running:
+        return True
+    alive_players = [p for p in gs.players.values() if p.alive]
+    if not alive_players:
+        await end_game(gs, bot, "Hech kim tirik qolmadi. O'yin tugadi.")
+        return True
+
+    naji_alive = gs.najiro_id in gs.players and gs.players[gs.najiro_id].alive
+    orochimaru_alive = gs.orochimaru_id in gs.players and gs.players[gs.orochimaru_id].alive
+    madara_alive = gs.madara_id in gs.players and gs.players[gs.madara_id].alive
+    alive_count = len(alive_players)
+
+    if madara_alive and all(p.poisoned for p in alive_players):
+        await end_game(gs, bot, "<b>Madara g'alaba qozondi!</b> Hamma zaharlandi.")
+        return True
+
+    if alive_count == 3 and naji_alive and orochimaru_alive:
+        await end_game(gs, bot, "<b>Najiro va Orochimaru g'alaba qozondi!</b>")
+        return True
+
+    if alive_count <= 2 and naji_alive:
+        await end_game(gs, bot, "<b>Najiro yakuniy g'alabani qo'lga kiritdi!</b>")
+        return True
+
+    if not naji_alive and not orochimaru_alive:
+        await end_game(gs, bot, "<b>Tinch o'yinchilar g'alaba qozondi!</b>")
+        return True
+
+    return False
+
 def get_role_description(role: str) -> str:
     d = {
         "Najiro": """Najiro — o‘yinning asosiy dushmani va markaziy qahramoni.
@@ -349,14 +517,18 @@ async def start_game(message: Message):
     if message.chat.type not in ["group", "supergroup"]:
         return await message.answer("❌ Bu buyruq faqat guruhlarda ishlaydi.")
 
-    if chat_id in active_games:
-        gs = active_games[chat_id]
-        try:
-            await bot.delete_message(chat_id, message.message_id)
-            await message.answer("⚠️ Lobby allaqachon mavjud.")
-        except:
-            print("Lobby exists message failed.")
-        return  
+    running_state = get_or_restore_game(chat_id)
+    if running_state and running_state.running:
+        return await message.answer("⚠️ Bu chatda o'yin allaqachon davom etmoqda.")
+
+    existing_lobby = active_games.get(chat_id)
+    if existing_lobby:
+        if existing_lobby.running:
+            return await message.answer("⚠️ Bu chatda o'yin allaqachon davom etmoqda.")
+
+        await safe_delete(bot, chat_id, existing_lobby.lobby_message_id)
+        active_games.pop(chat_id, None)
+        await message.answer("♻️ Eski lobby yopildi. Yangi lobby ochilmoqda...")
     
     bot_info = await bot.get_me()
     join_url = f"https://t.me/{bot_info.username}?start=game_{chat_id}"
@@ -385,21 +557,30 @@ async def start_game(message: Message):
     )
     active_games[chat_id] = gs
 
+    current_lobby = gs
+
     await asyncio.sleep(JOIN_TIME)
-    gs = active_games.get(chat_id)
-    if not gs or gs.running or len(gs.players) < 5:
+    gs_after_wait = active_games.get(chat_id)
+
+    if gs_after_wait is None:
+        return
+
+    if gs_after_wait is not current_lobby:
+        # Lobby o'zgartirilgan yoki yangilangan, eski taymer hech nima qilmasin
+        return
+
+    if gs_after_wait.running or len(gs_after_wait.players) < 5:
         print("Lobby tugadi, lekin o'yin boshlanmadi.")
-        # await broadcast(bot, chat_id, f"Kamida 5 kishi kerak. Hozirda {len(gs.players)} kishi bor.")
-        await safe_delete(bot, chat_id, gs.lobby_message_id if gs else None)
+        await safe_delete(bot, chat_id, gs_after_wait.lobby_message_id)
         active_games.pop(chat_id, None)
         return
 
-    await safe_delete(bot, chat_id, gs.lobby_message_id)
-    await begin_game(gs, bot)
+    await safe_delete(bot, chat_id, gs_after_wait.lobby_message_id)
+    await begin_game(gs_after_wait, bot)
 
 @router.message(Command("play"))
 async def start_game_play(message: Message):
-    gs = active_games.get(message.chat.id)
+    gs = get_or_restore_game(message.chat.id)
     if not gs or gs.running or len(gs.players) < 5:
         return await message.answer("Kamida 5 kishi kerak!")
     await message.answer("O'yin boshlanmoqda...")
@@ -408,37 +589,66 @@ async def start_game_play(message: Message):
     await begin_game(gs, message.bot)
 
 
+
+
 # ────────────────────── O'YIN BOSHLANISHI ──────────────────────
 async def begin_game(gs: GameState, bot):
-    assign_roles(gs)
-    for p in gs.players.values():
-        print(f"{p.name} roli: {p.role}")
-        await bot.send_message(p.user_id,
-            f"<b>Rolingiz:</b> {p.role}\n\n{get_role_description(p.role)}",
-            parse_mode="HTML")
-        
-    await broadcast(bot, gs.chat_id,f"<b>O'yin boshlandi!</b>\nIshtirokchilar: {len(gs.players)}")
+    if not gs.players:
+        return
+
+    if not gs.running:
+        gs.running = True
+
+    roles_assigned = gs.najiro_id is not None
+    if not roles_assigned:
+        assign_roles(gs)
+        roles_assigned = True
+        for p in gs.players.values():
+            print(f"{p.name} roli: {p.role}")
+            await bot.send_message(
+                p.user_id,
+                f"<b>Rolingiz:</b> {p.role}\n\n{get_role_description(p.role)}",
+                parse_mode="HTML"
+            )
+        await broadcast(bot, gs.chat_id, f"<b>O'yin boshlandi!</b>\nIshtirokchilar: {len(gs.players)}")
+        persist_game_state(gs, phase="roles_assigned", status="running")
+    else:
+        persist_game_state(gs, phase="resume", status="running")
 
     while gs.running:
-        alive = [p for p in gs.players.values() if p.alive]
-        if len(alive) <= 2:
-            await end_game(gs, bot, f"O'yin tugadi! Qolganlar: {', '.join(p.name for p in alive)}")
-            return
-
-        najiro_alive = gs.najiro_id in gs.players and gs.players[gs.najiro_id].alive
-        orochimaru_alive = gs.orochimaru_id in gs.players and gs.players[gs.orochimaru_id].alive
-        if not najiro_alive and not orochimaru_alive:
-            await end_game(gs, bot, "<b>Tinch o'yinchilar g'alaba qozondi!</b>")
-            return
-
-        if all(p.poisoned for p in alive) and alive:
-            await end_game(gs, bot, "<b>Madara g'alaba qozondi!</b>\nHamma zaharlandi!")
+        if await evaluate_victory(gs, bot):
             return
 
         gs.round_number += 1
+        await broadcast(
+            bot,
+            gs.chat_id,
+            f"♻️ {gs.round_number}-raund boshlandi!\n"
+            "1) 🃏 Karta tanlash\n"
+            "2) 🌙 Tun amallari\n"
+            "3) ☀️ Gumondorni aniqlash"
+        )
+        await announce_alive(bot, gs, f"♻️ {gs.round_number}-raund oldidan tiriklar")
+        persist_game_state(gs, phase=f"round_{gs.round_number}_start")
+
         await card_phase(gs, bot)
-        await night_phase(gs, bot)
+        await announce_alive(bot, gs, "🃏 Karta bosqichidan keyingi holat")
+        persist_game_state(gs, phase=f"round_{gs.round_number}_card_done")
+        if not gs.running or await evaluate_victory(gs, bot):
+            return
+
+        await round_actions_phase(gs, bot)
+        await announce_alive(bot, gs, "🌙 Tun yakunlari")
+        persist_game_state(gs, phase=f"round_{gs.round_number}_actions_done")
+        if not gs.running or await evaluate_victory(gs, bot):
+            return
+
         await day_phase(gs, bot)
+        await announce_alive(bot, gs, "🌞 Kunduzgi ovozdan keyingi holat")
+        persist_game_state(gs, phase=f"round_{gs.round_number}_day_done")
+        if not gs.running or await evaluate_victory(gs, bot):
+            return
+
         await asyncio.sleep(2)
 
 
@@ -545,10 +755,12 @@ async def reveal_with_olmos(cb: CallbackQuery):
         return await cb.answer("Olmos yetarli emas!", show_alert=True)
     gs = active_games.get(cb.message.chat.id)
     if not gs:
-        for g in active_games.values():
-            if user_id in g.players:
-                gs = g
-                break
+        gs = get_or_restore_game(cb.message.chat.id)
+        if not gs:
+            for g in active_games.values():
+                if user_id in g.players:
+                    gs = g
+                    break
     if not gs:
         return await cb.answer("O‘yin topilmadi yoki tugallangan!", show_alert=True)
     player = gs.players.get(user_id)
@@ -569,10 +781,12 @@ async def reveal_with_balls(cb: CallbackQuery):
     conn.close()
     gs = active_games.get(cb.message.chat.id)
     if not gs:
-        for g in active_games.values():
-            if user_id in g.players:
-                gs = g
-                break
+        gs = get_or_restore_game(cb.message.chat.id)
+        if not gs:
+            for g in active_games.values():
+                if user_id in g.players:
+                    gs = g
+                    break
     if not gs:
         return await cb.answer("O‘yin topilmadi yoki tugallangan!", show_alert=True)
     
@@ -618,7 +832,15 @@ Endi esa — o'zingizga tegishli kartani tanlang. Bu sizning taqdiringizni belgi
         keyboard_rows.append(row)
     kb = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
     await send_other_players_cards(gs, bot)
-    msg = await broadcast(bot, gs.chat_id, "🃏 <b>Karta tanlang!</b>", reply_markup=kb)
+    msg = await broadcast(
+        bot,
+        gs.chat_id,
+        "🃏 <b>Karta tanlash bosqichi!</b>\n\n"
+        "1) Faqat tirik o'yinchilar kartani tanlashi mumkin.\n"
+        "2) Kartangiz nomi bilan bir xil tugmani bosing.\n"
+        f"3) Sizda {CARD_CHOICE_TIME} soniya vaqt bor.",
+        reply_markup=kb
+    )
     gs.card_message_id = msg.message_id
 
     try:
@@ -631,30 +853,22 @@ Endi esa — o'zingizga tegishli kartani tanlang. Bu sizning taqdiringizni belgi
 
     for p in gs.players.values():
         if p.chosen_card == p.card:
-            found.append("@"+p.name)  
+            found.append(p.name)
 
         if p.alive and p.chosen_card != p.card:
             p.alive = False
-            killed.append("@"+p.name)
-            others = [f"{pl.name} — {pl.card}" for pl in gs.players.values()
-                      if pl.alive and pl.user_id != p.user_id]
-
-            try:
-                await bot.send_message(
-                    p.user_id,
-                    f"Siz o'ldingiz!\n\nBoshqalar kartalari:\n",
-                    parse_mode="HTML",
-                    protect_content=True
+            killed.append(p.name)
+            await notify_player_death(bot, p, "Kartani topa olmadingiz", gs)
+            revive_kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(
+                    text="1 olmosga tirilish",
+                    callback_data=f"revive:{gs.chat_id}:{p.user_id}"
                 )
-                revive_kb = InlineKeyboardMarkup(inline_keyboard=[[
-                    InlineKeyboardButton(
-                        text="1 olmosga tirilish",
-                        callback_data=f"revive:{gs.chat_id}:{p.user_id}"
-                    )
-                ]])
+            ]])
+            try:
                 await bot.send_message(p.user_id, "1 olmosga tirilish?", reply_markup=revive_kb)
-            except:
-                pass
+            except Exception as exc:
+                print("Revive prompt failed:", exc)
 
     if found:
         await broadcast(bot, gs.chat_id, f"Kartani topa olganlar: {', '.join(found)}")
@@ -709,85 +923,125 @@ async def revive_player(callback: CallbackQuery):
 
 
 # ────────────────────── KECHA ──────────────────────
-async def night_phase(gs: GameState, bot):
+async def round_actions_phase(gs: GameState, bot):
     if not any(p.alive for p in gs.players.values()):
-        await broadcast(bot, gs.chat_id, "Hech kim tirik qolmadi. O'yin tugadi.")
-        return await end_game(gs, bot,"Hech kim tirik qolmadi. O'yin tugadi.")
+        await end_game(gs, bot, "Hech kim tirik qolmadi. O'yin tugadi.")
+        return
 
-    a = "Ajal_game_test_bot"
-    a5="ajal_oyini_alisa_bot"
+    alive_now = [p for p in gs.players.values() if p.alive]
+    if len(alive_now) <= 1:
+        return
+
+    portal_bot = "ajal_oyini_alisa_bot"
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="Botga o'tish", url=f"https://t.me/{a5}")]]
+        inline_keyboard=[[InlineKeyboardButton(text="Botga o'tish", url=f"https://t.me/{portal_bot}")]]
     )
-
-    # Tun fazasi xabari
 
     await send_animation_or_text(
         bot,
         gs.chat_id,
         NIGHT_ANIMATION_PATH,
-        "🌘 2. Tun fazasi boshlandi\n"
-        "🌙 O'rmonni sukunat qopladi…\n"
-        "Soya orasida kimdir harakatga tushdi.\n"
-        "Bu tunda kimningdir hayoti xavf ostida.\n"
-        "“Hech kimga ishonmang, tun — aldamchi.”"
+        (
+            "🌙 <b>2-bosqich: Tun amallari</b>\n"
+            "• Najiro qurbon tanlaydi\n"
+            "• Madara zahar tarqatadi\n"
+            "• Qutqaruvchi bitta jon saqlab qoladi"
+        ),
+        parse_mode="HTML"
     )
-    await broadcast(bot, gs.chat_id, "Boshlang:", reply_markup=kb)
+    await broadcast(
+        bot,
+        gs.chat_id,
+        "Madara, Najiro va Qutqaruvchi qaror qabul qilmoqda…\n"
+        "⏳ Qarorlar yakunlanguncha kutamiz.",
+        reply_markup=kb
+    )
     gs.night_actions.clear()
 
-    if gs.najiro_id and gs.players[gs.najiro_id].alive:
-        targets = [p for p in gs.players.values() if p.alive and p.user_id != gs.najiro_id]
+    killer_alive = gs.najiro_id and gs.najiro_id in gs.players and gs.players[gs.najiro_id].alive
+    healer_alive = gs.qutqaruvchi_id and gs.qutqaruvchi_id in gs.players and gs.players[gs.qutqaruvchi_id].alive
+    madara_alive = gs.madara_id and gs.madara_id in gs.players and gs.players[gs.madara_id].alive
+
+    if killer_alive:
+        targets = [p for p in alive_now if p.user_id != gs.najiro_id]
         if targets:
-            kb = InlineKeyboardMarkup(
+            kill_kb = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text=p.name, callback_data=f"najiro_kill:{gs.chat_id}:{p.user_id}")]
                                  for p in targets[:10]]
             )
-            await bot.send_message(gs.najiro_id, "Siz najirosiz kimni o'ldirishni tanlang?", reply_markup=kb, protect_content=True)
+            try:
+                await bot.send_message(gs.najiro_id, "Najiro, qurbonni tanlang:", reply_markup=kill_kb)
+            except Exception as exc:
+                print(f"Najiro DM failed: {exc}")
 
-    # Qutqaruvchi harakati
-    if gs.qutqaruvchi_id and gs.players[gs.qutqaruvchi_id].alive and not gs.qutqaruvchi_used:
-        kb = InlineKeyboardMarkup(
+    if healer_alive and not gs.qutqaruvchi_used:
+        save_kb = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text=p.name, callback_data=f"qutqaruvchi_save:{gs.chat_id}:{p.user_id}")]
-                             for p in gs.players.values() if p.alive]
+                             for p in alive_now]
         )
-        await bot.send_message(gs.qutqaruvchi_id, "Siz Qutqaruvchisiz kimni qutqarishni xohlaysiz? (1 marta)", reply_markup=kb, protect_content=True)
+        try:
+            await bot.send_message(gs.qutqaruvchi_id, "Qutqaruvchi, kimni saqlamoqchisiz? (1 marta)", reply_markup=save_kb)
+        except Exception as exc:
+            print(f"Qutqaruvchi DM failed: {exc}")
 
-    # Madara harakati
-    if gs.madara_id and gs.players[gs.madara_id].alive:
-        targets = [p for p in gs.players.values() if p.alive and p.user_id != gs.madara_id and not p.poisoned]
-        if targets:
-            kb = InlineKeyboardMarkup(
+    if madara_alive:
+        poison_targets = [p for p in alive_now if p.user_id != gs.madara_id and not p.poisoned]
+        if poison_targets:
+            poison_kb = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text=p.name, callback_data=f"madara_poison:{gs.chat_id}:{p.user_id}")]
-                                 for p in targets[:10]]
+                                 for p in poison_targets[:10]]
             )
-            await bot.send_message(gs.madara_id, "Kimni zaharlamoqchisiz?", reply_markup=kb, protect_content=True)
+            try:
+                await bot.send_message(gs.madara_id, "Madara, kimni zaharlaysiz?", reply_markup=poison_kb)
+            except Exception as exc:
+                print(f"Madara DM failed: {exc}")
 
-    # Tun tugashini kutish
     await asyncio.sleep(NIGHT_DELAY)
 
-    # Harakatlarni qayta ishlash
+    alive_now = [p for p in gs.players.values() if p.alive]
+    summary_lines = []
     victim = gs.night_actions.get("najiro_kill")
     saved = gs.night_actions.get("qutqaruvchi_save")
     poison = gs.night_actions.get("madara_poison")
 
-    print("Night actions:", gs.night_actions)
+    if killer_alive:
+        if not victim:
+            candidates = [p for p in alive_now if p.user_id != gs.najiro_id]
+            if candidates:
+                auto_victim = random.choice(candidates)
+                victim = auto_victim.user_id
+                gs.night_actions["najiro_kill"] = victim
+        if victim:
+            target = gs.players.get(victim)
+            if target and target.alive:
+                if saved and victim == saved:
+                    summary_lines.append(f"🛡 Qutqaruvchi <b>{target.name}</b>ni saqlab qoldi.")
+                else:
+                    target.alive = False
+                    summary_lines.append(f"🩸 Najiro <b>{target.name}</b>ni o'ldirdi.")
+                    await notify_player_death(bot, target, "Najiro hujumi", gs)
 
-    if victim:
-        p_victim = gs.players.get(victim)
-        if not p_victim:
-            print("Xatolik: Najiro ning maqsadi topilmadi!")
-        else:
-            if victim == saved:
-                await broadcast(bot, gs.chat_id, "Qutqaruvchi kimnidir saqlab qoldi!")
-            else:
-                p_victim.alive = False
-                await broadcast(bot, gs.chat_id, f"<b>{p_victim.name}</b> kecha o'ldirildi! Qutqaruvchi saqlay olmadi." if saved else f"<b>{p_victim.name}</b> kecha o'ldirildi!")
+    if madara_alive:
+        if not poison:
+            poisonable = [p for p in alive_now if p.user_id != gs.madara_id and not p.poisoned]
+            if poisonable:
+                chosen = random.choice(poisonable)
+                poison = chosen.user_id
+                gs.night_actions["madara_poison"] = poison
+        if poison:
+            poisoned_player = gs.players.get(poison)
+            if poisoned_player and poisoned_player.alive and not poisoned_player.poisoned:
+                poisoned_player.poisoned = True
+                summary_lines.append(f"☠️ Madara <b>{poisoned_player.name}</b>ni zaharladi.")
+                try:
+                    await bot.send_message(poison, "Siz <b>zaharlandingiz</b>!", parse_mode="HTML")
+                except Exception as exc:
+                    print(f"Poison DM failed: {exc}")
 
-    if poison:
-        p_poisoned = gs.players.get(poison)
-        if p_poisoned:
-            p_poisoned.poisoned = True
-            await bot.send_message(poison, "Siz <b>zaharlandingiz</b>!", parse_mode="HTML", protect_content=True)
+    if summary_lines:
+        await broadcast(bot, gs.chat_id, "\n".join(summary_lines))
+    else:
+        await broadcast(bot, gs.chat_id, "Bu raundda hech kim zarar ko'rmadi.")
 
 
 
@@ -813,6 +1067,10 @@ async def najiro_kill(cb: CallbackQuery):
         await cb.answer("Bu tugma sizga emas!", show_alert=True)
         return
 
+    killer = gs.players.get(gs.najiro_id)
+    if not killer or not killer.alive:
+        return await cb.answer("Endi o'ldirish imkoniyati yo'q.", show_alert=True)
+
     gs.night_actions["najiro_kill"] = target_id
     await cb.answer("Tanlandi!")
 
@@ -831,6 +1089,12 @@ async def qutqaruvchi_save(cb: CallbackQuery):
 
     if cb.from_user.id != gs.qutqaruvchi_id:
         return await cb.answer("Bu sizga emas!", show_alert=True)
+
+    healer = gs.players.get(gs.qutqaruvchi_id)
+    if not healer or not healer.alive:
+        return await cb.answer("Siz endi qutqara olmaysiz.", show_alert=True)
+    if gs.qutqaruvchi_used:
+        return await cb.answer("Ability allaqachon ishlatilgan.", show_alert=True)
 
     gs.night_actions["qutqaruvchi_save"] = target_id
     gs.qutqaruvchi_used = True
@@ -852,6 +1116,12 @@ async def madara_poison(cb: CallbackQuery):
     if cb.from_user.id != gs.madara_id:
         return await cb.answer("Bu sizga emas!", show_alert=True)
 
+    madara = gs.players.get(gs.madara_id)
+    target = gs.players.get(target_id)
+    if (not madara or not madara.alive or
+            not target or not target.alive or target.poisoned or target.user_id == gs.madara_id):
+        return await cb.answer("Zaharlash mumkin emas.", show_alert=True)
+
     gs.night_actions["madara_poison"] = target_id
     await cb.answer("Zaharlandi!")
 
@@ -872,6 +1142,7 @@ async def madara_poison(cb: CallbackQuery):
 # ────────────────────── KUN ──────────────────────
 async def day_phase(gs: GameState, bot):
     if not any(p.alive for p in gs.players.values()):
+        await broadcast(bot, gs.chat_id, "Hech kim tirik qolmadi. O'yin tugadi.")
         return await end_game(gs, bot,"Hech kim tirik qolmadi. O'yin tugadi.")
 
     gs._nominee_counts.clear()
@@ -882,18 +1153,14 @@ async def day_phase(gs: GameState, bot):
         bot,
         gs.chat_id,
         DAY_ANIMATION_PATH,
-        """🌕 **KUNDUZ FAZASI BOSHLANDI** ☀️
-
-Qorong‘u tun ortda qoldi... Endi haqiqat vaqti!
-Kim yolg‘on gapiryapti? Kim qotil?
-Gumon qiling, bahslash, ovoz bering!
-
-⏱ Gumon qilish uchun 60 soniya vaqtingiz bor.""",
-        parse_mode="Markdown"
-    )
-    a5="ajal_oyini_alisa_bot"
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="Botga o'tish", url=f"https://t.me/{a5}")]]
+        (
+            "🌕 <b>KUNDUZ BOSQICHI</b> ☀️\n\n"
+            "Qorong'u tun ortda qoldi. Endi haqiqatni topish vaqti!\n"
+            "1) Shaxsiy xabarda gumondorni ko'rsating.\n"
+            f"2) Sizda {NOMINATE_TIME} soniya muhokama qilish uchun bor.\n"
+            "3) Eng ko'p gumon qilingan o'yinchi doriga olib chiqiladi va hamma ovoz beradi."
+        ),
+        parse_mode="HTML"
     )
 
     alive_players = [p for p in gs.players.values() if p.alive]
@@ -959,6 +1226,7 @@ Gumon qiling, bahslash, ovoz bering!
         nominee.alive = False
         emoji = "Obito kuchi" if nominee.user_id == gs.obito_id else "O‘ldirildi"
         await broadcast(bot, gs.chat_id, f"{emoji} <b>{nominee.name}</b> osildi!\n{h} — {s}")
+        await notify_player_death(bot, nominee, "Kunduzgi ovoz", gs)
     elif h == s:
         await broadcast(bot, gs.chat_id, f"Teng! {nominee.name} qutqarildi!")
     else:
@@ -989,12 +1257,61 @@ def get_vote_keyboard(gs, nominee_id: int):
         ]
     ])
 
+async def _refresh_vote_message(bot, gs: GameState):
+    vote_ctx = gs._temp_vote
+    if not vote_ctx:
+        return
+
+    nominee = gs.players.get(vote_ctx.get("nominee_id"))
+    if not nominee:
+        return
+
+    if not vote_ctx.get("vote_msg_id"):
+        return
+
+    h = vote_ctx["vote_state"]["hang"]
+    s = vote_ctx["vote_state"]["spare"]
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text=f"🔥 Osish ({h})",
+                callback_data=f"vh:{nominee.user_id}"
+            ),
+            InlineKeyboardButton(
+                text=f"🛡 Qutqarish ({s})",
+                callback_data=f"vs:{nominee.user_id}"
+            )
+        ]
+    ])
+
+    text = (
+        f"<b>{nominee.name}</b> uchun ovoz berish...\n\n"
+        f"Osish: {h} | Qutqarish: {s}"
+    )
+
+    try:
+        await bot.edit_message_text(
+            chat_id=gs.chat_id,
+            message_id=vote_ctx["vote_msg_id"],
+            text=text,
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
+    except TelegramBadRequest as e:
+        # Ignore harmless "message is not modified" noise but log other errors for debugging
+        if "message is not modified" not in str(e).lower():
+            print("Vote edit error:", e)
+
 async def handle_vote(cb: CallbackQuery, action: str):
     try:
         nominee_id = int(cb.data.split(":")[1])
-        gs = active_games.get(cb.message.chat.id)
-        if not gs or not gs._temp_vote:
-            return await cb.answer("Ovoz berish tugagan!")
+        gs = get_or_restore_game(cb.message.chat.id)
+        if not gs or not gs.running:
+            return await cb.answer("O'yin tugagan!", show_alert=True)
+
+        if not gs._temp_vote:
+            return await cb.answer("Ovoz berish hozir yo'q!", show_alert=True)
 
         if gs._temp_vote["nominee_id"] != nominee_id:
             return await cb.answer("Bu odam uchun ovoz berish tugagan!")
@@ -1015,28 +1332,7 @@ async def handle_vote(cb: CallbackQuery, action: str):
 
         await cb.answer(f"{count}x ovoz qabul qilindi!", show_alert=False)
 
-        # Tugmalarni yangilash (hozirgi natija bilan)
-        h = gs._temp_vote["vote_state"]["hang"]
-        s = gs._temp_vote["vote_state"]["spare"]
-
-        new_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=f"🔥 Osish ({h})",
-                    callback_data=f"vh:{nominee_id}"
-                ),
-                InlineKeyboardButton(
-                    text=f"🛡 Qutqarish ({s})",
-                    callback_data=f"vs:{nominee_id}"
-                )
-            ]
-        ])
-
-        await cb.message.edit_reply_markup(reply_markup=new_kb)
-
-        # Matnni ham yangilab qo‘yamiz (chiroyli bo‘lsin)
-        text = f"<b>{gs.players[nominee_id].name}</b> uchun ovoz berish...\n\nOsish: {h} | Qutqarish: {s}"
-        await cb.message.edit_text(text, reply_markup=new_kb, parse_mode="HTML")
+        await _refresh_vote_message(cb.bot, gs)
 
     except Exception as e:
         print("Vote error:", e)
@@ -1124,20 +1420,20 @@ async def end_game(gs: GameState, bot, result_text: str):
             earned_balls = 25
             user['last_game_result'] = "G'olib"
         else:
-            earned_balls = 3
+            earned_balls = 5
             user['last_game_result'] = "Mag'lub"
 
 
         # Shaxsiy foydalanuvchiga xabar
-        print(f"{p.name} o'yin natijasi: {user['last_game_result']}, ball: {earned_balls}",p.user_id)
         new_balls = add_balls(p.user_id, earned_balls)
+        user['balls'] = new_balls
 
         personal_msg = (
             f"🎮 <b>O'yin yakunlandi!</b>\n\n"
             f"👤 Foydalanuvchi: {p.name}\n"
             f"🏆 Natija: {user['last_game_result']}\n"
             f"💰 Sizga berilgan ball: {earned_balls}\n"
-            f"💰 Jami ballingiz: {new_balls}"
+            f"💰 Jami ballingiz: {user.get('balls', 0)}"
         )
         await bot.send_message(p.user_id, personal_msg)
 
